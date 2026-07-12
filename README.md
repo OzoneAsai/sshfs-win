@@ -26,6 +26,9 @@
     <a href="https://github.com/evsar3/sshfs-win-manager/releases/latest">
         <img src="https://img.shields.io/github/release/evsar3/sshfs-win-manager.svg?label=SSHFS-Win-Manager&style=for-the-badge"/>
     </a>
+    <a href="https://github.com/gregorkrebs/neosshwinmanager/releases/latest">
+        <img src="https://img.shields.io/github/release/gregorkrebs/neosshwinmanager.svg?label=NEO%20SSH-Win%20Manager&style=for-the-badge"/>
+    </a>
 </p>
 
 SSHFS-Win is a minimal port of [SSHFS](https://github.com/libfuse/sshfs) to Windows. Under the hood it uses [Cygwin](https://cygwin.com) for the POSIX environment and [WinFsp](https://github.com/billziss-gh/winfsp) for the FUSE functionality.
@@ -117,7 +120,7 @@ The complete UNC syntax is as follows:
 
 ## GUI front ends
 
-There are currently 2 GUI front ends for SSHFS-Win: [SiriKali](https://mhogomchungu.github.io/sirikali/) and [SSHFS-Win-Manager](https://github.com/evsar3/sshfs-win-manager).
+There are currently 3 GUI front ends for SSHFS-Win: [SiriKali](https://mhogomchungu.github.io/sirikali/), [SSHFS-Win-Manager](https://github.com/evsar3/sshfs-win-manager) and [NEO SSH-Win Manager](https://github.com/gregorkrebs/neosshwinmanager).
 
 ### SiriKali
 
@@ -137,6 +140,16 @@ SSHFS-Win-Manager supports:
 
 - Password authentication.
 - Public key authentication.
+
+### NEO SSH-Win Manager
+
+[NEO SSH-Win Manager](https://github.com/gregorkrebs/neosshwinmanager) is a modern GUI front end for SSHFS-Win, built with Python and PyQt6. It mounts remote SSH filesystems as Windows drive letters with one click, integrates with the Windows system tray, offers multi-user accounts with encrypted credential storage, per-user language, a live remote system info panel and a built-in SSH terminal. Please report problems with NEO SSH-Win Manager in its [issues](https://github.com/gregorkrebs/neosshwinmanager/issues) page.
+
+NEO SSH-Win Manager supports:
+
+- Password authentication.
+- Public key authentication.
+- SSH certificate authentication.
 
 ## Using Jump Hosts
 
