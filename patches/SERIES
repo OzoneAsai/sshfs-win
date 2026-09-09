@@ -46,3 +46,4 @@
 112-utimens-special-times.patch
 
 113-truncate-workaround-preservation.patch
+114-cygwin-compile-contract.patch
