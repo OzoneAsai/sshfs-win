@@ -128,7 +128,7 @@ function Invoke-SshfsWinLauncherValueTransaction {
     foreach ($class in $resolvedClasses) {
         $snapshot = Get-SshfsWinLauncherValueResult -Class $class -Name $Name
         if ($snapshot.Status -notin @('Present', 'Missing')) {
-            throw "Cannot start Launcher registry transaction for $class\$Name: $($snapshot.Error)"
+            throw "Cannot start Launcher registry transaction for ${class}\${Name}: $($snapshot.Error)"
         }
         $snapshots[$class] = $snapshot
     }
