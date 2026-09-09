@@ -1,9 +1,11 @@
+PrjDir = $(shell pwd)
+VersionFile = $(PrjDir)/VERSION
 MyProductName = "SSHFS-Win"
 MyCompanyName = "Navimatics LLC"
 MyDescription = "SSHFS for Windows"
-MyProductVersion = "2021.1 Beta2"
+MyVersion = $(strip $(shell cat "$(VersionFile)"))
+MyProductVersion = "$(MyVersion) Preview"
 MyProductStage = "Beta"
-MyVersion = 3.7.$(shell date '+%y%j')
 ifeq ($(shell uname -m),x86_64)
 	MyArch = x64
 else
@@ -13,7 +15,6 @@ endif
 CertIssuer = "DigiCert"
 CrossCert = "DigiCert High Assurance EV Root CA.crt"
 
-PrjDir	= $(shell pwd)
 BldDir	= .build/$(MyArch)
 DistDir = $(BldDir)/dist
 SrcDir	= $(BldDir)/src
@@ -78,7 +79,7 @@ $(Status)/dist: $(Status)/wix
 	trap - EXIT HUP INT TERM
 	touch $(Status)/dist
 
-$(Status)/wix: $(Status)/sshfs-win sshfs-win.wxs
+$(Status)/wix: $(Status)/sshfs-win sshfs-win.wxs $(VersionFile)
 	mkdir -p $(WixDir)
 	cp sshfs-win.wxs $(WixDir)/
 	candle -nologo -arch $(MyArch) -pedantic\
