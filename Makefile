@@ -6,10 +6,14 @@ MyDescription = "Modernized SSHFS for Windows"
 MyVersion = $(strip $(shell cat "$(VersionFile)"))
 MyProductVersion = "$(MyVersion) Preview"
 MyProductStage = "Beta"
-ifeq ($(shell uname -m),x86_64)
+
+HostArch := $(shell uname -m)
+ifeq ($(HostArch),x86_64)
 	MyArch = x64
-else
+else ifneq ($(filter i686 i586 i486 i386,$(HostArch)),)
 	MyArch = x86
+else
+	$(error Unsupported build host architecture '$(HostArch)'; supported Cygwin targets are x86_64 and x86)
 endif
 
 SigningIssuer ?= "DigiCert"
