@@ -81,7 +81,7 @@ git -C "$meta" config core.autocrlf false
 git -C "$meta" config core.filemode false
 GIT_WORK_TREE="$SRC" git -C "$meta" add -A
 while IFS= read -r -d '' path; do
-    git -C "$meta" update-index --chmod=-x -- "$path"
+    GIT_WORK_TREE="$SRC" git -C "$meta" update-index --chmod=-x -- "$path"
 done < <(git -C "$meta" ls-files -z)
 while IFS= read -r path || [[ -n "$path" ]]; do
     [[ -z "$path" || "$path" == \#* ]] && continue
@@ -89,7 +89,7 @@ while IFS= read -r path || [[ -n "$path" ]]; do
         echo "canonical executable path missing from SSHFS source: $path" >&2
         exit 5
     fi
-    git -C "$meta" update-index --chmod=+x -- "$path"
+    GIT_WORK_TREE="$SRC" git -C "$meta" update-index --chmod=+x -- "$path"
 done < "$EXECUTABLES"
 
 tree=$(git -C "$meta" write-tree)
