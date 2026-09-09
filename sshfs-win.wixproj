@@ -1,0 +1,24 @@
+<Project Sdk="WixToolset.Sdk/7.0.0">
+  <PropertyGroup>
+    <AcceptEula>wix7</AcceptEula>
+    <OutputType>Package</OutputType>
+    <InstallerPlatform Condition="'$(InstallerPlatform)' == ''">x64</InstallerPlatform>
+    <Pedantic>true</Pedantic>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <DefineConstants>MyProductName=$(MyProductName);MyCompanyName=$(MyCompanyName);MyDescription=$(MyDescription);MyProductVersion=$(MyProductVersion);MyProductStage=$(MyProductStage);MyVersion=$(MyVersion);MyArch=$(InstallerPlatform);UpgradeCode=$(UpgradeCode);OtherUpgradeCode=$(OtherUpgradeCode);RootDir=$(RootDir)</DefineConstants>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(InstallerPlatform)' == 'x64'">
+    <UpgradeCode>3576E993-BFE0-4707-B6F6-7F26BF88300B</UpgradeCode>
+    <OtherUpgradeCode>DC1B144B-4B64-4245-BC57-959267714315</OtherUpgradeCode>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(InstallerPlatform)' == 'x86'">
+    <UpgradeCode>DC1B144B-4B64-4245-BC57-959267714315</UpgradeCode>
+    <OtherUpgradeCode>3576E993-BFE0-4707-B6F6-7F26BF88300B</OtherUpgradeCode>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="WixToolset.UI.wixext" Version="7.0.0" />
+  </ItemGroup>
+</Project>
