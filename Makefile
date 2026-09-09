@@ -186,9 +186,7 @@ $(Status)/patch: $(Status)/clone $(SSHFS_PATCH_SERIES) $(SSHFS_PATCHES)
 
 $(Status)/clone:
 	mkdir -p $(SrcDir)
-	rm -rf "$(SrcDir)/sshfs"
-	cp -a "$(PrjDir)/sshfs" "$(SrcDir)/sshfs"
-	tools/verify-sshfs-source.sh --source-only "$(SrcDir)/sshfs"
+	tools/stage-sshfs-source.sh "$(PrjDir)/sshfs" "$(SrcDir)/sshfs"
 	touch $(Status)/clone
 
 clean:
