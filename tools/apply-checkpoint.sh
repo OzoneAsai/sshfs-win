@@ -30,6 +30,7 @@ fi
 
 git -C "$REPO/sshfs" checkout --detach "$SSHFS_SHA"
 cp "$SELF_DIR/Makefile" "$REPO/Makefile"
+cp "$SELF_DIR/VERSION" "$REPO/VERSION"
 cp "$SELF_DIR/CHECKPOINT" "$REPO/CHECKPOINT"
 cp "$SELF_DIR/sshfs-win.c" "$REPO/sshfs-win.c"
 cp "$SELF_DIR/portable-format.h" "$REPO/portable-format.h"
