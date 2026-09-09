@@ -96,13 +96,14 @@ for token in (
         failures.append(f"sshfs-win.wxs: missing WiX v7 authoring contract {token}")
 for forbidden in (
     "http://schemas.microsoft.com/wix/2006/wi",
-    "<Product",
     'Win64="no"',
     "WOW6432Node",
     "<ComponentGroupRef Id=\"C.Main\"",
 ):
     if forbidden in wxs:
         failures.append(f"sshfs-win.wxs: legacy WiX v3 authoring remains: {forbidden}")
+if re.search(r"<Product(?:\s|>)", wxs):
+    failures.append("sshfs-win.wxs: legacy WiX v3 Product element remains")
 for component in ("C.sshfs.reg", "C.sshfs.r.reg", "C.sshfs.k.reg", "C.sshfs.kr.reg"):
     pattern = rf'<Component\s+Id="{re.escape(component)}"[^>]*\bBitness="always32"'
     if re.search(pattern, wxs) is None:
