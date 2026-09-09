@@ -25,10 +25,7 @@ fi
 # target checkout to have initialized submodule metadata or the pinned commit in
 # a nested Git object store; replace that historical representation with the
 # checkpoint's self-contained vendored source instead.
-"$SELF_DIR/tools/verify-sshfs-source.sh" --source-only "$SELF_DIR/sshfs" >/dev/null
-rm -rf -- "$REPO/sshfs"
-cp -a "$SELF_DIR/sshfs" "$REPO/sshfs"
-"$SELF_DIR/tools/verify-sshfs-source.sh" --source-only "$REPO/sshfs" >/dev/null
+"$SELF_DIR/tools/stage-sshfs-source.sh" "$SELF_DIR/sshfs" "$REPO/sshfs"
 rm -f -- "$REPO/.gitmodules"
 
 cp "$SELF_DIR/Makefile" "$REPO/Makefile"
