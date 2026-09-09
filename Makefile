@@ -1,5 +1,6 @@
 PrjDir = $(shell pwd)
 VersionFile = $(PrjDir)/VERSION
+WixProject = $(PrjDir)/sshfs-win.wixproj
 MyProductName = "SSHFS-Win"
 MyCompanyName = "OzoneAsai"
 MyDescription = "Modernized SSHFS for Windows"
@@ -38,8 +39,6 @@ SSHFSMainTree = 35655f60d37403663238a73b4204cfd64fdca73c
 SSHFS_PATCH_SERIES = $(PrjDir)/patches/SERIES
 SSHFS_PATCHES = $(wildcard $(PrjDir)/patches/*.patch)
 BinExtra= #bash ls mount
-
-export PATH := $(shell cygpath -au "$$WIX")/bin:$(PATH)
 
 goal: $(Status) $(Status)/done
 
@@ -84,38 +83,22 @@ $(Status)/dist: $(Status)/wix
 	trap - EXIT HUP INT TERM
 	touch $(Status)/dist
 
-$(Status)/wix: $(Status)/sshfs-win sshfs-win.wxs $(VersionFile)
+$(Status)/wix: $(Status)/sshfs-win sshfs-win.wxs sshfs-win.wixproj $(VersionFile)
 	mkdir -p $(WixDir)
-	cp sshfs-win.wxs $(WixDir)/
-	candle -nologo -arch $(MyArch) -pedantic\
-		-dMyProductName=$(MyProductName)\
-		-dMyCompanyName=$(MyCompanyName)\
-		-dMyDescription=$(MyDescription)\
-		-dMyProductVersion=$(MyProductVersion)\
-		-dMyProductStage=$(MyProductStage)\
-		-dMyVersion=$(MyVersion)\
-		-dMyArch=$(MyArch)\
-		-o "$(shell cygpath -aw $(WixDir)/sshfs-win.wixobj)"\
-		"$(shell cygpath -aw $(WixDir)/sshfs-win.wxs)"
-	heat dir $(shell cygpath -aw $(RootDir))\
-		-nologo -dr INSTALLDIR -cg C.Main -srd -ke -sreg -gg -sfrag\
-		-o $(shell cygpath -aw $(WixDir)/root.wxs)
-	candle -nologo -arch $(MyArch) -pedantic\
-		-dMyProductName=$(MyProductName)\
-		-dMyCompanyName=$(MyCompanyName)\
-		-dMyDescription=$(MyDescription)\
-		-dMyProductVersion=$(MyProductVersion)\
-		-dMyProductStage=$(MyProductStage)\
-		-dMyVersion=$(MyVersion)\
-		-dMyArch=$(MyArch)\
-		-o "$(shell cygpath -aw $(WixDir)/root.wixobj)"\
-		"$(shell cygpath -aw $(WixDir)/root.wxs)"
-	light -nologo\
-		-o $(shell cygpath -aw $(WixDir)/sshfs-win-$(MyVersion)-$(MyArch).msi)\
-		-ext WixUIExtension\
-		-b $(RootDir)\
-		$(shell cygpath -aw $(WixDir)/root.wixobj)\
-		$(shell cygpath -aw $(WixDir)/sshfs-win.wixobj)
+	dotnet build "$(shell cygpath -aw $(WixProject))" \
+		--configuration Release \
+		--property:InstallerPlatform=$(MyArch) \
+		--property:OutputName=sshfs-win-$(MyVersion)-$(MyArch) \
+		--property:OutputPath="$(shell cygpath -aw $(WixDir))" \
+		--property:IntermediateOutputPath="$(shell cygpath -aw $(WixDir)/obj)" \
+		--property:MyProductName=$(MyProductName) \
+		--property:MyCompanyName=$(MyCompanyName) \
+		--property:MyDescription=$(MyDescription) \
+		--property:MyProductVersion=$(MyProductVersion) \
+		--property:MyProductStage=$(MyProductStage) \
+		--property:MyVersion=$(MyVersion) \
+		--property:RootDir="$(shell cygpath -aw $(RootDir))"
+	test -f "$(WixDir)/sshfs-win-$(MyVersion)-$(MyArch).msi"
 	touch $(Status)/wix
 
 $(Status)/sshfs-win: $(Status)/root sshfs-win.c portable-format.h
