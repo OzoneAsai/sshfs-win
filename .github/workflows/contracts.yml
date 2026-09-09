@@ -36,10 +36,23 @@ jobs:
             bash -n "$file"
           done < <(find tools tests -type f -name '*.sh' -print | sort)
 
+      - name: Select C23 compiler mode
+        run: |
+          set -euo pipefail
+          probe='int main(void) { return 0; }'
+          if printf '%s\n' "$probe" | gcc -std=gnu23 -x c -c -o /tmp/c23-probe.o - 2>/dev/null; then
+            echo 'CSTD=gnu23' >> "$GITHUB_ENV"
+          elif printf '%s\n' "$probe" | gcc -std=gnu2x -x c -c -o /tmp/c23-probe.o - 2>/dev/null; then
+            echo 'CSTD=gnu2x' >> "$GITHUB_ENV"
+          else
+            echo 'GCC does not provide a usable GNU C23 mode' >&2
+            exit 1
+          fi
+
       - name: Wrapper strict compile
         run: |
           set -euo pipefail
-          gcc -std=gnu23 -Wall -Wextra -Werror -I. -c sshfs-win.c -o /tmp/sshfs-win.o
+          gcc -std="$CSTD" -Wall -Wextra -Werror -I. -c sshfs-win.c -o /tmp/sshfs-win.o
 
       - name: Strict C contract tests
         run: |
@@ -47,8 +60,8 @@ jobs:
           mkdir -p /tmp/sshfs-win-tests
           for src in tests/*.c; do
             exe="/tmp/sshfs-win-tests/$(basename "${src%.c}")"
-            echo "[strict] $src"
-            gcc -std=gnu23 -Wall -Wextra -Werror -pthread "$src" -ldl -o "$exe"
+            echo "[strict/$CSTD] $src"
+            gcc -std="$CSTD" -Wall -Wextra -Werror -pthread "$src" -ldl -o "$exe"
             "$exe"
           done
 
@@ -62,8 +75,8 @@ jobs:
           mkdir -p /tmp/sshfs-win-tests-sanitized
           for src in tests/*.c; do
             exe="/tmp/sshfs-win-tests-sanitized/$(basename "${src%.c}")"
-            echo "[asan+ubsan] $src"
-            gcc -std=gnu23 -Wall -Wextra -Werror -pthread \
+            echo "[asan+ubsan/$CSTD] $src"
+            gcc -std="$CSTD" -Wall -Wextra -Werror -pthread \
               -fsanitize=address,undefined -fno-omit-frame-pointer \
               "$src" -ldl -o "$exe"
             "$exe"
