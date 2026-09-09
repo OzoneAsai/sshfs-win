@@ -112,8 +112,9 @@ jobs:
         shell: pwsh
         run: |
           $version = (Get-Content -LiteralPath VERSION -Raw).Trim()
-          $out = Join-Path $env:RUNNER_TEMP "wix-out-${{ matrix.arch }}"
-          $obj = Join-Path $env:RUNNER_TEMP "wix-obj-${{ matrix.arch }}"
+          $sep = [IO.Path]::DirectorySeparatorChar
+          $out = (Join-Path $env:RUNNER_TEMP "wix-out-${{ matrix.arch }}") + $sep
+          $obj = (Join-Path $env:RUNNER_TEMP "wix-obj-${{ matrix.arch }}") + $sep
           dotnet build .\sshfs-win.wixproj `
             --configuration Release `
             "--property:InstallerPlatform=${{ matrix.arch }}" `
