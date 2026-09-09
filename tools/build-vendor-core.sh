@@ -18,6 +18,11 @@ JOBS=${NUMBER_OF_PROCESSORS:-4}
 mkdir -p "$SRC" "$PREFIX" "$RUNTIME/bin"
 : > "$MAP"
 
+# This is a Cygwin-native toolchain. Do not allow Windows-host helpers from the
+# inherited PATH (notably ccache on hosted runners) to become compiler launchers.
+TOOL_PATH="$PREFIX/bin:/usr/local/bin:/usr/bin"
+export PATH="$TOOL_PATH"
+
 clone_locked() {
     local repo=$1 ref=$2 commit=$3 dir=$4
     rm -rf "$dir"
@@ -76,7 +81,6 @@ PCRE2_PKGCONFIG="$PREFIX/lib/pkgconfig"
 clone_locked "$GLIB_REPO" "$GLIB_REF" "$GLIB_COMMIT" "$SRC/glib"
 rm -rf "$SRC/glib/build"
 PKG_CONFIG_PATH="$PCRE2_PKGCONFIG" \
-PATH="$PREFIX/bin:$PATH" \
 meson setup "$SRC/glib/build" "$SRC/glib" \
     --prefix="$PREFIX" \
     --wrap-mode=nodownload \
@@ -90,11 +94,11 @@ meson setup "$SRC/glib/build" "$SRC/glib" \
     -Dlibmount=disabled \
     -Dsysprof=disabled \
     -Dnls=disabled
-PKG_CONFIG_PATH="$PCRE2_PKGCONFIG" PATH="$PREFIX/bin:$PATH" \
+PKG_CONFIG_PATH="$PCRE2_PKGCONFIG" \
     meson compile -C "$SRC/glib/build" -j "$JOBS"
-PKG_CONFIG_PATH="$PCRE2_PKGCONFIG" PATH="$PREFIX/bin:$PATH" \
+PKG_CONFIG_PATH="$PCRE2_PKGCONFIG" \
     meson test -C "$SRC/glib/build" --print-errorlogs
-PKG_CONFIG_PATH="$PCRE2_PKGCONFIG" PATH="$PREFIX/bin:$PATH" \
+PKG_CONFIG_PATH="$PCRE2_PKGCONFIG" \
     meson install -C "$SRC/glib/build"
 register_prefix_dlls glib "$GLIB_COMMIT"
 
