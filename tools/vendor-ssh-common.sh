@@ -3,6 +3,12 @@
 VENDOR_SSH_TOOLS_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 VENDOR_SSH_ROOT=$(cd -- "$VENDOR_SSH_TOOLS_DIR/.." && pwd)
 VENDOR_SSH_LOCKS="$VENDOR_SSH_ROOT/deps/SOURCE_LOCKS.tsv"
+VENDOR_SSH_SYSTEM_PATH=/usr/local/bin:/usr/bin
+
+vendor_ssh_use_tool_path() {
+    local prefix=$1
+    export PATH="$prefix/bin:$VENDOR_SSH_SYSTEM_PATH"
+}
 
 vendor_ssh_lock_field() {
     local component=$1 field=$2
@@ -100,7 +106,7 @@ vendor_ssh_record_metadata() {
     }
 
     version_tmp=$(mktemp)
-    if ! PATH="$prefix/bin:/usr/local/bin:/usr/bin" "$ssh_exe" -V >"$version_tmp" 2>&1; then
+    if ! PATH="$prefix/bin:$VENDOR_SSH_SYSTEM_PATH" "$ssh_exe" -V >"$version_tmp" 2>&1; then
         echo "OpenSSH version probe failed: $ssh_exe -V" >&2
         cat "$version_tmp" >&2
         rm -f "$version_tmp"
@@ -118,7 +124,7 @@ vendor_ssh_record_metadata() {
         cat "$runtime/openssh-version.txt" >&2
         return 29
     fi
-    if ! PATH="$prefix/bin:/usr/local/bin:/usr/bin" "$openssl_exe" version -a \
+    if ! PATH="$prefix/bin:$VENDOR_SSH_SYSTEM_PATH" "$openssl_exe" version -a \
         >"$runtime/openssl-version.txt"; then
         echo "OpenSSL version probe failed" >&2
         return 27
@@ -143,6 +149,7 @@ vendor_ssh_build_openssh() {
 
     vendor_ssh_clone_locked "$OPENSSH_REPO" "$OPENSSH_REF" "$OPENSSH_COMMIT" "$openssh_dir"
     (
+        vendor_ssh_use_tool_path "$prefix"
         cd "$openssh_dir"
         [[ -x ./configure ]] || autoreconf -fi
         CPPFLAGS="-I$prefix/include" \
