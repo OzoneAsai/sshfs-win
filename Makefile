@@ -1,8 +1,8 @@
 PrjDir = $(shell pwd)
 VersionFile = $(PrjDir)/VERSION
 MyProductName = "SSHFS-Win"
-MyCompanyName = "Navimatics LLC"
-MyDescription = "SSHFS for Windows"
+MyCompanyName = "OzoneAsai"
+MyDescription = "Modernized SSHFS for Windows"
 MyVersion = $(strip $(shell cat "$(VersionFile)"))
 MyProductVersion = "$(MyVersion) Preview"
 MyProductStage = "Beta"
@@ -12,8 +12,9 @@ else
 	MyArch = x86
 endif
 
-CertIssuer = "DigiCert"
-CrossCert = "DigiCert High Assurance EV Root CA.crt"
+SigningIssuer ?= "DigiCert"
+SigningSubject ?= $(MyCompanyName)
+SigningCrossCert ?= "DigiCert High Assurance EV Root CA.crt"
 
 BldDir	= .build/$(MyArch)
 DistDir = $(BldDir)/dist
@@ -59,9 +60,9 @@ $(Status)/dist: $(Status)/wix
 	trap 'rm -f "$$tmp"' EXIT HUP INT TERM; \
 	msi=$$(cygpath -aw "$$tmp"); \
 	if sed 's/\r$$//' tools/signtool | bash -s -- sign \
-		/ac tools/$(CrossCert) \
-		/i $(CertIssuer) \
-		/n $(MyCompanyName) \
+		/ac tools/$(SigningCrossCert) \
+		/i $(SigningIssuer) \
+		/n $(SigningSubject) \
 		/d $(MyDescription) \
 		/fd sha256 \
 		/tr https://timestamp.digicert.com \
@@ -72,7 +73,7 @@ $(Status)/dist: $(Status)/wix
 		echo "WARNING: signing failed; publishing unsigned local MSI because AllowUnsigned=1" >&2; \
 	else \
 		echo "ERROR: signing failed; no distribution MSI was published." >&2; \
-		echo "For a deliberate local-only unsigned build, rerun with AllowUnsigned=1." >&2; \
+		echo "Set SigningSubject/SigningIssuer for the fork's signing certificate, or use AllowUnsigned=1 for deliberate local-only builds." >&2; \
 		exit 1; \
 	fi; \
 	mv -f "$$tmp" "$$dst"; \
