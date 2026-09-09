@@ -1,6 +1,6 @@
-# Dependency policy — checkpoint 8
+# Dependency policy
 
-This checkpoint stops treating the Cygwin build machine as an implicit dependency lockfile.
+This project does not treat the Cygwin build machine as an implicit dependency lockfile.
 
 ## Runtime policy
 
@@ -9,7 +9,7 @@ This checkpoint stops treating the Cygwin build machine as an implicit dependenc
 - GLib baseline: 2.88.3 in the current 2.88.x stable line. Development 2.89.x is intentionally not chased merely because it is newer.
 - SSHFS core remains pinned to `24448e2493533ead984d6ca322c583e1a26cc613` until a newer upstream commit is separately audited.
 - Legacy OpenSSL 1.0/1.1 runtime DLLs are forbidden.
-- OpenSSL 3.0 is not accepted for the vendor SSH path: its upstream support ends 2026-09-07.
+- OpenSSL 3.0 is not accepted for the vendor SSH path: its upstream support ended on 2026-09-07.
 
 ## SSH/crypto policy
 
@@ -24,6 +24,14 @@ OpenSSL 3.5 was selected instead of 4.0 because 3.5 is the long-term support bra
 
 The source-built SSH path is deliberately separate from Windows native OpenSSH. Native OpenSSH remains useful for compatibility experiments, but a Windows installation may carry an older inbox version and therefore cannot be treated as a reproducible security baseline.
 
+## Source locks and build-tool floors
+
+`deps/SOURCE_LOCKS.tsv` is for audited source/runtime inputs whose identity or provenance is intentionally fixed, including SSHFS, OpenSSL, OpenSSH, WinFsp, Cygwin, GLib, and PCRE2.
+
+Build-only tooling follows a different contract. `deps/MINIMUMS.tsv` is the single authority for supported build-tool floors such as Meson and Ninja. A newer compatible stable build tool is allowed; it is not source drift. `tools/check-dependencies.sh` reads those floors directly instead of duplicating version numbers in shell code.
+
+For example, Meson 1.9.2 satisfies the audited Meson floor of 1.8.5. Reproducibility of packaged runtime inputs is not improved by pretending that the build host used Meson 1.8.5 when it did not.
+
 ## Reproducibility
 
 `tools/check-dependencies.sh` checks build dependencies before packaging.
@@ -31,10 +39,11 @@ The source-built SSH path is deliberately separate from Windows native OpenSSH. 
 `tools/write-dependency-manifest.sh` records packaged files, hashes, and owning Cygwin packages.
 `tools/audit-runtime.sh` rejects known legacy crypto DLL names.
 
+Cygwin-native compilation uses an explicit tool PATH rather than inheriting the Windows host PATH. This prevents host utilities such as a native `ccache.exe` from being selected as launchers for Cygwin compilers. The same boundary is used by the SSHFS core, vendored PCRE2/GLib, and vendored OpenSSL/OpenSSH build paths.
+
 The bundled pristine SSHFS source is verified without nested repository metadata:
 `tools/verify-sshfs-source.sh` reconstructs the Git tree and requires
 `35655f60d37403663238a73b4204cfd64fdca73c`, corresponding to the pinned
-`24448e2493533ead984d6ca322c583e1a26cc613` source snapshot. File modes are
-part of this identity, so source-archive mode loss is detected before patching.
+`24448e2493533ead984d6ca322c583e1a26cc613` source snapshot. Canonical executable modes are part of this identity; native POSIX checkouts also verify the observed execute bits, while Windows/Cygwin reconstructs the canonical modes rather than trusting NTFS mode emulation.
 
 No dependency is considered upgraded merely because `cygcheck` happened to find a newer DLL on one developer machine.
