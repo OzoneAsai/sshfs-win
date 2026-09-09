@@ -154,7 +154,7 @@ $np = 'HKLM:\SYSTEM\CurrentControlSet\Services\WinFsp.Np\NetworkProvider'
 foreach ($n in @('Name','ProviderPath','DeviceName')) {
     $r = Get-RegValueResult $np $n
     if ($r.Status -eq 'Present') {
-        Add-Line "WinFsp.Np.$n: $($r.Value)"
+        Add-Line "WinFsp.Np.${n}: $($r.Value)"
     } elseif ($r.Status -eq 'Error') {
         Add-Fail "WinFsp.Np.$n query failed: $($r.Error)"
     } else {
@@ -331,7 +331,7 @@ Add-Section 'User SSH configuration'
 $sshDir = Join-Path $env:USERPROFILE '.ssh'
 foreach ($name in @('config','known_hosts','id_ed25519','id_rsa')) {
     $p = Join-Path $sshDir $name
-    Add-Line "$name: $(if (Test-Path -LiteralPath $p) {'present'} else {'absent'})"
+    Add-Line "${name}: $(if (Test-Path -LiteralPath $p) {'present'} else {'absent'})"
 }
 
 Add-Section 'Exploit protection'
