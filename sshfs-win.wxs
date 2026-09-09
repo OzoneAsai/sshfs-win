@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+<Wix
+    xmlns="http://wixtoolset.org/schemas/v4/wxs"
+    xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
   <Package
       Name="$(MyProductName) $(MyProductVersion) ($(MyArch))"
       Manufacturer="$(MyCompanyName)"
@@ -153,10 +155,10 @@
       <Files Include="$(RootDir)\**" Directory="INSTALLDIR" />
     </Feature>
 
+    <ui:WixUI Id="WixUI_FeatureTree" />
     <WixVariable Id="WixUIBannerBmp" Value="art/wixbanner.bmp" />
     <WixVariable Id="WixUIDialogBmp" Value="art/wixdialog-$(MyProductStage).bmp" />
-    <UI Id="FeatureTree">
-      <UIRef Id="WixUI_FeatureTree" />
+    <UI Id="FeatureTreeCustomization">
       <Publish
           Dialog="WelcomeDlg"
           Control="Next"
