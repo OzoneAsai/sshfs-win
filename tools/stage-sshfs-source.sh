@@ -17,9 +17,9 @@ case "$DST" in
 esac
 
 # Verify the authority before copying, then verify the staged bytes/modes again.
-# Plain recursive copy deliberately avoids cp -a: preserving Windows directory
-# ownership/ACL metadata through Cygwin is neither part of Git tree identity nor
-# reliably permitted on hosted/locked-down NTFS volumes.
+# Plain recursive copy deliberately avoids archive/ACL preservation: Windows
+# directory ownership metadata is neither part of Git tree identity nor
+# reliably writable through Cygwin on hosted or locked-down NTFS volumes.
 "$SELF_DIR/verify-sshfs-source.sh" --source-only "$SRC" >/dev/null
 rm -rf -- "$DST"
 mkdir -p -- "$(dirname -- "$DST")"
