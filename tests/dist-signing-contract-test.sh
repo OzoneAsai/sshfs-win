@@ -7,6 +7,7 @@ trap 'rm -rf "$tmp"' EXIT
 
 mkdir -p "$tmp/tools" "$tmp/mock/bin" "$tmp/.build/x64/status" "$tmp/.build/x64/wix"
 cp "$project_root/Makefile" "$tmp/Makefile"
+cp "$project_root/VERSION" "$tmp/VERSION"
 
 cat > "$tmp/mock/bin/cygpath" <<'EOF'
 #!/usr/bin/env bash
@@ -22,7 +23,7 @@ exit "${SIGN_RC:-1}"
 EOF
 chmod +x "$tmp/tools/signtool"
 
-version="3.7.$(date '+%y%j')"
+version=$(tr -d '\r\n' < "$tmp/VERSION")
 src="$tmp/.build/x64/wix/sshfs-win-${version}-x64.msi"
 dst="$tmp/.build/x64/dist/sshfs-win-${version}-x64.msi"
 status="$tmp/.build/x64/status/dist"
