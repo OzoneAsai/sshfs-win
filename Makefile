@@ -17,9 +17,9 @@ else
 	$(error Unsupported build host architecture '$(HostArch)'; supported Cygwin targets are x86_64 and x86)
 endif
 
-SigningIssuer ?= "DigiCert"
+SigningIssuer ?=
 SigningSubject ?= $(MyCompanyName)
-SigningCrossCert ?= "DigiCert High Assurance EV Root CA.crt"
+SigningCrossCert ?=
 
 BldDir	= .build/$(MyArch)
 DistDir = $(BldDir)/dist
@@ -63,8 +63,8 @@ $(Status)/dist: $(Status)/wix
 	trap 'rm -f "$$tmp"' EXIT HUP INT TERM; \
 	msi=$$(cygpath -aw "$$tmp"); \
 	if sed 's/\r$$//' tools/signtool | bash -s -- sign \
-		/ac tools/$(SigningCrossCert) \
-		/i $(SigningIssuer) \
+		$(if $(strip $(SigningCrossCert)),/ac tools/$(SigningCrossCert)) \
+		$(if $(strip $(SigningIssuer)),/i $(SigningIssuer)) \
 		/n $(SigningSubject) \
 		/d $(MyDescription) \
 		/fd sha256 \
@@ -76,7 +76,7 @@ $(Status)/dist: $(Status)/wix
 		echo "WARNING: signing failed; publishing unsigned local MSI because AllowUnsigned=1" >&2; \
 	else \
 		echo "ERROR: signing failed; no distribution MSI was published." >&2; \
-		echo "Set SigningSubject/SigningIssuer for the fork's signing certificate, or use AllowUnsigned=1 for deliberate local-only builds." >&2; \
+		echo "Set SigningSubject and, only when required, SigningIssuer/SigningCrossCert; or use AllowUnsigned=1 for deliberate local-only builds." >&2; \
 		exit 1; \
 	fi; \
 	mv -f "$$tmp" "$$dst"; \
