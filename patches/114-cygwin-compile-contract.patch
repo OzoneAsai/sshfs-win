@@ -1,0 +1,77 @@
+--- a/sshfs.c
++++ b/sshfs.c
+@@ -1436,6 +1436,8 @@ static int start_ssh_win32(struct conn *conn)
+ 	HANDLE child_stdout = INVALID_HANDLE_VALUE;
+ 	HANDLE child_stderr = INVALID_HANDLE_VALUE;
+ 	HANDLE inherit_list[3];
++	char read_pipe_name[] = "/dev/piper";
++	char write_pipe_name[] = "/dev/pipew";
+ 	SIZE_T attr_size = 0;
+ 	wchar_t *application = NULL, *cmdline = NULL, *cwd = NULL;
+ 	int rfd = -1, wfd = -1, result = -1;
+@@ -1469,13 +1471,13 @@ static int start_ssh_win32(struct conn *conn)
+ 	}
+ 
+ 	/* Transfer the parent pipe ends into Cygwin fd ownership. */
+-	rfd = cygwin_attach_handle_to_fd("/dev/piper", -1, parent_read,
++	rfd = cygwin_attach_handle_to_fd(read_pipe_name, -1, parent_read,
+ 					 O_BINARY, GENERIC_READ);
+ 	if (rfd < 0)
+ 		goto out;
+ 	parent_read = INVALID_HANDLE_VALUE;
+-	wfd = cygwin_attach_handle_to_fd("/dev/pipew", -1, parent_write,
++	wfd = cygwin_attach_handle_to_fd(write_pipe_name, -1, parent_write,
+ 					 O_BINARY, GENERIC_WRITE);
+ 	if (wfd < 0)
+ 		goto out;
+@@ -1908,6 +1910,7 @@ static int connect_direct(struct conn *conn)
+ 	return 0;
+ }
+ 
++#ifdef __linux__
+ static int parse_vsock_address(const char *vsock, unsigned int *cid,
+ 			       unsigned int *port)
+ {
+@@ -1943,10 +1946,13 @@ static int parse_vsock_address(const char *vsock, unsigned int *cid,
+ 	*port = (unsigned int) value;
+ 	return 0;
+ }
++#endif
+ 
+ static int connect_vsock(struct conn *conn, const char *vsock)
+ {
+ #ifndef __linux__
++	(void) conn;
++	(void) vsock;
+ 	fprintf(stderr, "vsock is not available\n");
+ 	return -1;
+ #else
+@@ -3129,14 +3135,6 @@ out:
+ 	return err;
+ }
+ 
+-static int sftp_request_send(struct conn *conn, uint8_t type, struct iovec *iov,
+-			     size_t count, request_func begin_func, request_func end_func,
+-			     int want_reply, void *data, struct request **reqp)
+-{
+-	return sftp_request_send_gen(conn, -1, NULL, type, iov, count,
+-				     begin_func, end_func, want_reply, data, reqp);
+-}
+-
+ static int sftp_request_iov_gen(struct conn *conn, int expected_connver,
+ 				int *used_connver, uint8_t type,
+ 				struct iovec *iov, size_t count,
+@@ -3156,13 +3154,6 @@ static int sftp_request_iov_gen(struct conn *conn, int expected_connver,
+ 	return sftp_request_wait(req, type, expect_type, outbuf);
+ }
+ 
+-static int sftp_request_iov(struct conn *conn, uint8_t type, struct iovec *iov,
+-			    size_t count, uint8_t expect_type, struct buffer *outbuf)
+-{
+-	return sftp_request_iov_gen(conn, -1, NULL, type, iov, count,
+-				    expect_type, outbuf);
+-}
+-
+ static int sftp_request_gen(struct conn *conn, int expected_connver,
+ 			    int *used_connver, uint8_t type,
+ 			    const struct buffer *buf, uint8_t expect_type,
