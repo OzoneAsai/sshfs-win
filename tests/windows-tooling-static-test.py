@@ -17,6 +17,7 @@ mutation_scripts = [
     "enable-handle-observer.ps1", "disable-handle-observer.ps1",
     "enable-handle-limit.ps1", "disable-handle-limit.ps1",
     "enable-diagnostics.ps1", "disable-diagnostics.ps1",
+    "set-server-alive-interval.ps1", "set-group-read-write.ps1",
 ]
 
 for name in mutation_scripts:
@@ -81,7 +82,6 @@ for token in (
     if token not in diag:
         failures.append(f"diagnose-windows11.ps1: missing contract check {token}")
 
-
 if 'pre-cleanup-exit' in diag or 'net use $Drive /delete /y" 2>&1\n        $preCleanup' in diag:
     failures.append("diagnose-windows11.ps1: probe must not delete a pre-existing drive mapping")
 
@@ -138,9 +138,8 @@ for name in ("build-vendor-ssh.sh", "continue-vendor-ssh.sh", "finalize-vendor-s
         failures.append(f"{name}: contains legacy implicit OpenSSH target")
 
 for name in ("GroupReadWrite.reg", "ServerAliveInterval.reg"):
-    text = (root / name).read_text(encoding="utf-8")
-    if r"HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\WinFsp\Services" not in text:
-        failures.append(f"{name}: must explicitly target the 32-bit launcher view when imported as .reg")
+    if (root / name).exists():
+        failures.append(f"{name}: legacy .reg mutation bypasses the explicit Registry32 helper layer")
 
 repair = (tools / "repair-test-registration.ps1").read_text(encoding="utf-8")
 for token in ("RegistryView]::Registry64", "RegistryView]::Registry32"):
