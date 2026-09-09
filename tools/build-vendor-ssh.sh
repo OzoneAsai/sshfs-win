@@ -14,9 +14,11 @@ MAP="$OUT/vendor-source-map.tsv"
 JOBS=${NUMBER_OF_PROCESSORS:-4}
 mkdir -p "$SRC" "$PREFIX" "$RUNTIME/bin"
 touch "$MAP"
+vendor_ssh_use_tool_path "$PREFIX"
 
 vendor_ssh_clone_locked "$OPENSSL_REPO" "$OPENSSL_REF" "$OPENSSL_COMMIT" "$SRC/openssl"
 (
+    vendor_ssh_use_tool_path "$PREFIX"
     cd "$SRC/openssl"
     ./Configure Cygwin-x86_64 shared --prefix="$PREFIX" --openssldir="$PREFIX/ssl"
     make -j"$JOBS"
