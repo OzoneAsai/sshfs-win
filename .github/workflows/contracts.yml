@@ -143,8 +143,19 @@ jobs:
         shell: bash -o igncr -e -o pipefail {0}
         run: |
           set -euo pipefail
+          export PATH=/usr/local/bin:/usr/bin
           workspace=$(cygpath -u "$GITHUB_WORKSPACE")
           cd "$workspace"
+
+          echo '[cygwin] tool path'
+          printf 'PATH=%s\n' "$PATH"
+          command -v gcc
+          command -v meson
+          command -v ninja
+          if command -v ccache >/dev/null 2>&1; then
+            echo 'unexpected ccache in hermetic Cygwin PATH' >&2
+            exit 1
+          fi
 
           echo '[cygwin] wrapper'
           gcc -Wall -Wextra -Werror -I. -o /tmp/sshfs-win.exe sshfs-win.c
