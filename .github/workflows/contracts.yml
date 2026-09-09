@@ -21,6 +21,7 @@ jobs:
           python3 tests/packaging-standard-contract-test.py
           python3 tests/windows-tooling-static-test.py
           python3 tests/launcher-registry-transaction-test.py
+          python3 tests/native-argv-authority-test.py
 
       - name: Source and distribution contracts
         run: |
