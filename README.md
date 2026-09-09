@@ -2,52 +2,44 @@
     <img src="art/sshfs-glow.png" width="256"/>
     <br/>
     <br/>
-    SSHFS-Win &middot; SSHFS for Windows
+    SSHFS-Win &middot; Windows modernization fork
 </h1>
 
-<p align="center">
-    <b>Download</b><br>
-    <a href="https://github.com/billziss-gh/sshfs-win/releases/latest">
-        <img src="https://img.shields.io/github/release/billziss-gh/sshfs-win.svg?label=stable&style=for-the-badge"/>
-    </a>
-    <a href="https://github.com/billziss-gh/sshfs-win/releases">
-        <img src="https://img.shields.io/github/release/billziss-gh/sshfs-win/all.svg?label=latest&colorB=e52e4b&style=for-the-badge"/>
-    </a>
-    <!-- a href="https://chocolatey.org/packages/sshfs">
-        <img src="https://img.shields.io/badge/choco-install%20sshfs-black.svg?style=for-the-badge"/>
-    </a -->
-</p>
+This repository is a development fork of [upstream SSHFS-Win](https://github.com/winfsp/sshfs-win). It retains the WinFsp/Cygwin architecture while carrying a substantially larger Windows 11, concurrency, transport-generation, write-integrity, reproducibility, and diagnostic patch set.
 
-<p align="center">
-    <b>GUI Frontends</b><br>
-    <a href="https://github.com/mhogomchungu/sirikali/releases/latest">
-        <img src="https://img.shields.io/github/release/mhogomchungu/sirikali.svg?label=SiriKali&style=for-the-badge"/>
-    </a>
-    <a href="https://github.com/evsar3/sshfs-win-manager/releases/latest">
-        <img src="https://img.shields.io/github/release/evsar3/sshfs-win-manager.svg?label=SSHFS-Win-Manager&style=for-the-badge"/>
-    </a>
-    <a href="https://github.com/gregorkrebs/neosshwinmanager/releases/latest">
-        <img src="https://img.shields.io/github/release/gregorkrebs/neosshwinmanager.svg?label=NEO%20SSH-Win%20Manager&style=for-the-badge"/>
-    </a>
-</p>
+> **Release status:** this fork does not currently advertise an OzoneAsai binary release as a stable download. The upstream WinGet package and upstream release page install the upstream project, not the source in this repository. Use them when you want upstream SSHFS-Win; do not use them as a way to install this fork.
 
-SSHFS-Win is a minimal port of [SSHFS](https://github.com/libfuse/sshfs) to Windows. Under the hood it uses [Cygwin](https://cygwin.com) for the POSIX environment and [WinFsp](https://github.com/billziss-gh/winfsp) for the FUSE functionality.
+The package version used by this source tree is stored in [`VERSION`](VERSION). Build timestamps are metadata only and are not part of the MSI product version.
+
+## Current modernization scope
+
+The current source includes, among other work:
+
+- explicit request, handle, and connection-generation ownership in the patched SSHFS core;
+- synchronous Windows write safety with validated SFTP STATUS replies;
+- multi-connection routing and pathname-affinity fixes;
+- forkless Win32 OpenSSH spawning for public-key launcher classes;
+- UTF-16 Launcher command-line recovery and strict UTF-8 normalization;
+- pinned source-built runtime dependencies and source-tree identity verification;
+- source, packaging, sanitizer, and Windows-tooling contract tests.
+
+The remaining native release gates are documented in [`WINDOWS11_COMPAT.md`](WINDOWS11_COMPAT.md).
 
 ## Installation
 
-- Install the latest version of [WinFsp](https://github.com/billziss-gh/winfsp/releases/latest).
-- Install the latest version of [SSHFS-Win](https://github.com/billziss-gh/sshfs-win/releases). Choose the x64 or x86 installer according to your computer's architecture.
+A packaged stable installer for this fork is not currently published from this repository.
 
-Both can also be easily installed with [WinGet](https://github.com/microsoft/winget-cli):
+For upstream SSHFS-Win, install the latest [WinFsp](https://github.com/winfsp/winfsp/releases/latest) and use the upstream [SSHFS-Win releases](https://github.com/winfsp/sshfs-win/releases). The WinGet command below also installs upstream SSHFS-Win, not this fork:
 
 ```console
 winget install SSHFS-Win.SSHFS-Win
 ```
 
+For this fork, build from the checked-out source as described in [Building](#building).
+
 ## Basic Usage
 
-Once you have installed WinFsp and SSHFS-Win you can map a network drive to a directory on an SSHFS host using Windows Explorer or the `net use` command.
-
+Once WinFsp and an SSHFS-Win build are installed, you can map a network drive to a directory on an SSHFS host using Windows Explorer or the `net use` command.
 
 ### Windows Explorer
 
@@ -55,141 +47,79 @@ In Windows Explorer select This PC > Map Network Drive and enter the desired dri
 
     \\sshfs\REMUSER@HOST[\PATH]
 
-The first time you map a particular SSHFS path you will be prompted for the SSHFS username and password. You may choose to save these credentials with the Windows Credential Manager in which case you will not be prompted again.
+The first time you map a password-authenticated SSHFS path you will be prompted for the SSHFS username and password. You may choose to save these credentials with Windows Credential Manager.
 
-In order to unmap the drive, right-click on the drive icon in Windows Explorer and select Disconnect.
-
-<p align="center">
-<img src="cap.gif" height="450"/>
-</p>
+To unmap the drive, right-click the drive icon and select Disconnect.
 
 ### Command Line
 
-You can map a network drive from the command line using the `net use` command:
+You can map a network drive from the command line with `net use`:
 
-```
-> net use X: \\sshfs\billziss@mac2018.local
-The password is invalid for \\sshfs\billziss@mac2018.local.
-
-Enter the user name for 'sshfs': billziss
-Enter the password for sshfs:
-The command completed successfully.
+```console
+net use X: \\sshfs\REMUSER@HOST
 ```
 
-You can list your `net use` drives:
+List mappings with:
 
-```
-$ net use
-New connections will be remembered.
-
-
-Status       Local     Remote                    Network
-
--------------------------------------------------------------------------------
-             X:        \\sshfs\billziss@mac2018.local
-                                                WinFsp.Np
-The command completed successfully.
+```console
+net use
 ```
 
-Finally you can unmap the drive as follows:
+Remove a mapping with:
 
-```
-$ net use X: /delete
-X: was deleted successfully.
+```console
+net use X: /delete
 ```
 
 ## UNC Syntax
 
-The complete UNC syntax is as follows:
+The complete UNC syntax is:
 
     \\sshfs\[LOCUSER=]REMUSER@HOST[!PORT][\PATH]
     \\sshfs.r\[LOCUSER=]REMUSER@HOST[!PORT][\PATH]
     \\sshfs.k\[LOCUSER=]REMUSER@HOST[!PORT][\PATH]
     \\sshfs.kr\[LOCUSER=]REMUSER@HOST[!PORT][\PATH]
 
-- `REMUSER` is the remote user (i.e. the user on the SSHFS host whose credentials are being used for access).
-- `HOST` is the SSHFS host.
-- `PORT` is the remote port on the SSHFS host (optional; default is 22).
-- `PATH` is the remote path. This is interpreted as follows:
-    - The `sshfs` prefix maps to `HOST:~REMUSER/PATH` on the SSHFS host (i.e. relative to `REMUSER`'s home directory).
-    - The `sshfs.r` prefix maps to `HOST:/PATH` on the SSHFS host (i.e. relative to the `HOST`'s root directory).
-    - The `sshfs.k` prefix maps to `HOST:~REMUSER/PATH` and uses the ssh key in `%USERPROFILE%/.ssh/id_rsa` (where `%USERPROFILE%` is the home directory of the local Windows user). To specify a different specific key, define an alias of the HOST with the specific private ssh key you want to use in the ssh config. BEWARE: only keys without a pass phrase are supported.
-    - The `sshfs.kr` prefix maps to `HOST:/PATH` and uses the ssh key in `%USERPROFILE%/.ssh/id_rsa`. To specify a different specific key, define an alias of the HOST with the specific private ssh key you want to use in the ssh config. BEWARE: only keys without a pass phrase are supported.
-- `LOCUSER` is the local Windows user (optional; `USERNAME` or `DOMAIN+USERNAME` format).
-    - Please note that this functionality is rarely necessary with latest versions of WinFsp.
+- `REMUSER` is the remote user.
+- `HOST` is the SSH/SFTP host or an OpenSSH config alias.
+- `PORT` is the optional remote port; when omitted, OpenSSH config/default resolution is preserved.
+- `PATH` is interpreted relative to the remote home for `sshfs`/`sshfs.k` and relative to remote root for `sshfs.r`/`sshfs.kr`.
+- `LOCUSER` is the optional local Windows account (`USERNAME` or `DOMAIN+USERNAME`).
+- `sshfs.k` and `sshfs.kr` are public-key launcher classes. They use non-interactive OpenSSH policy and the forkless Win32 spawn path by default.
 
 ## GUI front ends
 
-There are currently 3 GUI front ends for SSHFS-Win: [SiriKali](https://mhogomchungu.github.io/sirikali/), [SSHFS-Win-Manager](https://github.com/evsar3/sshfs-win-manager) and [NEO SSH-Win Manager](https://github.com/gregorkrebs/neosshwinmanager).
+Existing SSHFS-Win front ends may still be useful because the UNC surface remains compatible:
 
-### SiriKali
+- [SiriKali](https://mhogomchungu.github.io/sirikali/)
+- [SSHFS-Win-Manager](https://github.com/evsar3/sshfs-win-manager)
+- [NEO SSH-Win Manager](https://github.com/gregorkrebs/neosshwinmanager)
 
-[SiriKali](https://mhogomchungu.github.io/sirikali/) is a GUI front end for SSHFS-Win (and other file systems). Instructions on setting up SiriKali for SSHFS-Win can be found at this [link](https://github.com/mhogomchungu/sirikali/wiki/Frequently-Asked-Questions#90-how-do-i-add-options-to-connect-to-an-ssh-server). Please report problems with SiriKali in its [issues](https://github.com/mhogomchungu/sirikali/issues) page.
-
-SiriKali supports:
-
-- Password authentication.
-- Public key authentication.
-- Key Agents and KeePass 2.
-
-### SSHFS-Win-Manager
-
-[SSHFS-Win-Manager](https://github.com/evsar3/sshfs-win-manager) is a new GUI front end specifically for SSHFS-Win with a user-friendly and intuitive interface. SSHFS-Win-Manager integrates well with Windows and can be closed to the system tray. Please report problems with SSHFS-Win-Manager in its [issues](https://github.com/evsar3/sshfs-win-manager/issues) page.
-
-SSHFS-Win-Manager supports:
-
-- Password authentication.
-- Public key authentication.
-
-### NEO SSH-Win Manager
-
-[NEO SSH-Win Manager](https://github.com/gregorkrebs/neosshwinmanager) is a modern GUI front end for SSHFS-Win, built with Python and PyQt6. It mounts remote SSH filesystems as Windows drive letters with one click, integrates with the Windows system tray, offers multi-user accounts with encrypted credential storage, per-user language, a live remote system info panel and a built-in SSH terminal. Please report problems with NEO SSH-Win Manager in its [issues](https://github.com/gregorkrebs/neosshwinmanager/issues) page.
-
-NEO SSH-Win Manager supports:
-
-- Password authentication.
-- Public key authentication.
-- SSH certificate authentication.
+Compatibility with a particular frontend does not imply that the frontend installs or tests this fork.
 
 ## Using Jump Hosts
 
-sshfs-win itself does not currently support ssh tunneling, but something similar can be achieved using the built-in openSSH of windows.
+SSHFS-Win can use normal OpenSSH configuration. Prefer expressing jump-host behavior in `%USERPROFILE%\.ssh\config`, for example with `ProxyJump`, and then mount the configured alias through the normal UNC syntax.
 
-- use openSSH t create a local port forward through the jump host to the target
-  ```
-  ssh -L <origin port of jump connection>:<target of tunnel>:<port of target to target> <adress of tunnel jump host>
-  ```
-  All standard settings of the ssh config may be used in this step.
+A local port forward is also possible when that better matches the environment:
 
-  Reference example ssh config:
-  ```
-  create the file C:\Users\<UserName>\.ssh\config and/or add the following lines:
-
-  Host <jump host alias>
-    Hostname <adress of jump host>
-    User <user name at jump host>
-    IdentityFile <path to private key for login to the jump host, may have a pass phrase>
-    IdentitesOnly yes
-  ```
-- connect to the target server using the following
-  ```
-  \\sshfs\REMUSER@localhost!<origin port of jump connection>
-  ```
-  or similar.
-
+```console
+ssh -L LOCAL_PORT:TARGET_HOST:TARGET_PORT JUMP_HOST
+net use X: \\sshfs\REMUSER@localhost!LOCAL_PORT
+```
 
 ## Advanced Usage
 
-It is possible to use the `sshfs-win.exe` and `sshfs.exe` programs directly for advanced usage scenarios. Both programs can be found in the `bin` subdirectory of the `SSHFS-Win` installation (usually `\Program Files\SSHFS-Win\bin`).
+The `sshfs-win.exe` wrapper and `sshfs.exe` core can be invoked directly. In the installed tree they live under `bin`.
 
-The `sshfs-win.exe` program is useful to launch `sshfs.exe` from a `cmd.exe` prompt (`sshfs-win cmd`) or to launch `sshfs.exe` under the control of the [WinFsp Launcher](https://github.com/billziss-gh/winfsp/wiki/WinFsp-Service-Architecture) (`sshfs-win svc`). The `sshfs-win.exe` program **SHOULD NOT** be used from Cygwin. The `sshfs-win.exe` program has the following usage:
+`sshfs-win.exe` supports:
 
-```
+```text
 usage: sshfs-win cmd SSHFS_COMMAND_LINE
     SSHFS_COMMAND_LINE  command line to pass to sshfs
 
 usage: sshfs-win svc PREFIX X: [LOCUSER] [SSHFS_OPTIONS]
-    PREFIX              Windows UNC prefix (note single backslash)
+    PREFIX              Windows UNC prefix
                         \sshfs[.SUFFIX]\[LOCUSER=]REMUSER@HOST[!PORT][\PATH]
                         sshfs: remote user home dir
                         sshfs.r: remote root dir
@@ -204,73 +134,99 @@ usage: sshfs-win svc PREFIX X: [LOCUSER] [SSHFS_OPTIONS]
     SSHFS_OPTIONS       additional options to pass to SSHFS
 ```
 
-The `sshfs.exe` program can be used with an existing Cygwin installation, but it requires prior installation of FUSE for Cygwin on that Cygwin installation. FUSE for Cygwin is included with WinFsp and can be installed on a Cygwin installation by executing the command:
+`sshfs-win.exe` is a Windows/WinFsp wrapper and should not be treated as a generic Cygwin command-line frontend.
 
+## Launcher settings
+
+WinFsp Launcher service definitions live in the **32-bit registry view**. Code in this repository accesses that view through the .NET `RegistryView.Registry32` abstraction rather than by spelling the physical `WOW6432Node` path.
+
+Use the shared helper-backed PowerShell tools from an elevated PowerShell session when changing Launcher configuration. They verify writes and fail on inaccessible or malformed configuration.
+
+### Preventing timeouts
+
+To set `ServerAliveInterval=30` for the standard launcher classes:
+
+```powershell
+.\tools\set-server-alive-interval.ps1
 ```
-$ sh "$(cat /proc/registry32/HKEY_LOCAL_MACHINE/SOFTWARE/WinFsp/InstallDir | tr -d '\0')"/opt/cygfuse/install.sh
-FUSE for Cygwin installed.
+
+### Setting looser permissions for new files and directories
+
+To apply `create_file_umask=0117,create_dir_umask=0007`:
+
+```powershell
+.\tools\set-group-read-write.ps1
 ```
 
-## Passing options to sshfs for mapped network drives
+The old `.reg` mutation files were removed because a `.reg` file cannot express a registry view independently of the physical redirected path.
 
-When using mapped network drives created in Windows Explorer or using "net use", you can't directly pass options to sshfs. You can, however, pass them via a registry patch. When you then map a network drive or use "net use", the options are automatically passed in the background. Registry patches for common issues below are provided and serve as an example.
+## Diagnostics
 
-## Preventing timeouts
+Startup diagnostics and the Windows 11 Error 67 boundary are documented in [`DIAGNOSTICS.md`](DIAGNOSTICS.md). Persistent logging is opt-in.
 
-A connection will timeout after some minutes when nothing is transferred. To prevent this, pass e.g. "-o ServerAliveInterval=30" as SSHFS_OPTIONS. A keep-alive request is sent every 30 seconds.
-
-Map network drive or "net use": Use the provided "ServerAliveInterval.reg" registry patch.
-
-## Setting looser permissions for new files and directories
-
-On a shared file server, the default permissions for new files created may be too strict and prevent others from reading and writing them. To set looser permissions, pass e.g. "-o create_file_umask=0117,create_dir_umask=0007" as SSHFS_OPTIONS. This will allow owner/group read and write permissions on new files and owner/group read, write and execute permissions on new directories.
-
-Map network drive or "net use": Use the provided "GroupReadWrite.reg" registry patch.
+Useful configuration and inspection helpers live under `tools/`, including reconnect, delayed connection, safe-write, parallel-connection, handle-observer, handle-limit, and diagnostic toggles.
 
 ## Project Organization
 
-This is a simple project:
+This fork is no longer accurately described as a wrapper plus a couple of patches.
 
-- `sshfs` is a submodule pointing to the original SSHFS project.
-- `sshfs-win.c` is a simple wrapper around the sshfs program that is used to implement the "Map Network Drive" functionality.
-- `sshfs-win.wxs` is a the Wix file that describes the SSHFS-Win installer.
-- `patches` is a directory with a couple of simple patches over SSHFS.
-- `Makefile` drives the overall process of building SSHFS-Win and packaging it into an MSI.
+- `sshfs/` is a **vendored, pinned pristine SSHFS source directory**, not a Git submodule. Its content and executable file modes are verified against the pinned upstream Git tree before patching.
+- `patches/SERIES` is the canonical ordered patch manifest for the effective SSHFS implementation.
+- `sshfs-win.c` is the WinFsp/Cygwin wrapper and Windows Launcher boundary.
+- `sshfs-win.wxs` describes the current MSI package.
+- `VERSION` is the deterministic MSI product-version source.
+- `deps/` contains dependency policy and exact source locks.
+- `tests/` contains C, shell, Python, sanitizer-oriented, and packaging/tooling contracts.
+- `.github/workflows/contracts.yml` runs the portable source contracts on GitHub Actions.
+- `Makefile` drives dependency construction, SSHFS patching, runtime closure assembly, and MSI packaging.
+
+Historical checkpoint reports remain in the repository as engineering records; current behavior should be inferred from the source and executable contracts rather than from a checkpoint report alone.
 
 ## Building
 
-In order to build SSHFS-Win you will need Cygwin and the following Cygwin packages:
+The build is currently Cygwin-hosted and packages a Windows MSI.
 
-- gcc-core
-- git
-- libglib2.0-devel
-- make
-- meson
-- patch
+The dependency policy and pinned versions are defined in [`DEPENDENCY_POLICY.md`](DEPENDENCY_POLICY.md) and [`deps/SOURCE_LOCKS.tsv`](deps/SOURCE_LOCKS.tsv). The default build constructs the pinned vendor runtime rather than accepting arbitrary DLLs from the developer machine.
 
-You will also need:
+At minimum the build environment needs the bootstrap tooling checked by:
 
-- FUSE for Cygwin. It is included with WinFsp and can be installed on a Cygwin installation by executing the command:
+```console
+tools/check-dependencies.sh --bootstrap
+```
 
-    ```
-    $ sh "$(cat /proc/registry32/HKEY_LOCAL_MACHINE/SOFTWARE/WinFsp/InstallDir | tr -d '\0')"/opt/cygfuse/install.sh
-    FUSE for Cygwin installed.
-    ```
-- [Wix toolset](http://wixtoolset.org). This is a native Windows package that is used to build the SSHFS-Win MSI installer.
+Then build from the repository root:
 
-To build:
+```console
+make
+```
 
-- Open a Cygwin prompt.
-- Change directory to the sshfs-win repository.
-- Issue `make`.
-- The sshfs-win repository includes the upstream SSHFS project as a submodule; if you have not already done so, you must initialize it with `git submodule update --init sshfs`.
+The resulting distribution MSI is staged under `.build/<arch>/dist/` after the signing policy succeeds. For deliberate local testing only, an unsigned package can be requested with `AllowUnsigned=1`.
+
+No `git submodule update` step is required: `sshfs/` is shipped as verified plain source.
+
+### Packaging toolchain status
+
+The current Makefile still uses the WiX v3 command-line pipeline (`candle`, `heat`, `light`). Moving packaging to the supported WiX v7 SDK/build model is a remaining standardization task and should be performed as a dedicated packaging change rather than hidden behind compatibility wrappers.
+
+## Validation
+
+Portable validation is designed to be runnable outside Windows where possible:
+
+```console
+python3 tests/packaging-standard-contract-test.py
+python3 tests/windows-tooling-static-test.py
+bash tests/patch-series-contract-test.sh
+bash tests/source-archive-self-contained-test.sh
+bash tests/artifact-hygiene-test.sh
+bash tests/dist-signing-contract-test.sh
+```
+
+The root GitHub Actions workflow additionally strict-compiles the wrapper and runs the standalone C contracts under both normal strict flags and AddressSanitizer/UndefinedBehaviorSanitizer.
+
+These portable tests do not replace the native Cygwin/WinFsp/Windows 11 release gates documented in `WINDOWS11_COMPAT.md`.
 
 ## License
 
-SSHFS-Win uses the same license as SSHFS, which is GPLv2+. It interfaces with WinFsp which is GPLv3 with a FLOSS exception.
+SSHFS-Win uses the same GPLv2+ licensing basis as SSHFS. It interfaces with WinFsp under WinFsp's applicable licensing terms.
 
-It also packages the following components:
-
-- Cygwin: LGPLv3
-- GLib2: LGPLv2
-- SSH: "all components are under a BSD licence, or a licence more free than that"
+The distribution also carries third-party runtime components whose exact versions are locked in `deps/SOURCE_LOCKS.tsv`; consult those upstream projects for their respective license texts.
