@@ -20,6 +20,7 @@ jobs:
           set -euo pipefail
           python3 tests/packaging-standard-contract-test.py
           python3 tests/windows-tooling-static-test.py
+          python3 tests/launcher-registry-transaction-test.py
 
       - name: Source and distribution contracts
         run: |
@@ -92,6 +93,21 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v5
+
+      - name: Validate PowerShell syntax
+        shell: pwsh
+        run: |
+          $failed = $false
+          Get-ChildItem -LiteralPath tools -Filter '*.ps1' | ForEach-Object {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$tokens, [ref]$errors) | Out-Null
+            if ($errors.Count -ne 0) {
+              $failed = $true
+              Write-Error "$($_.Name): $($errors -join '; ')" -ErrorAction Continue
+            }
+          }
+          if ($failed) { throw 'PowerShell syntax validation failed.' }
 
       - name: Show .NET SDK
         shell: pwsh
