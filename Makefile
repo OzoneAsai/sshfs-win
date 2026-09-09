@@ -33,6 +33,11 @@ VendorDir = $(BldDir)/vendor
 VendorRuntime = $(VendorDir)/runtime
 AllowUnsigned ?= 0
 
+# Core compilation is a Cygwin build. Do not inherit the Windows host PATH:
+# native tools such as a runner-provided ccache can be discoverable from a
+# Cygwin shell yet fail when they try to execute Cygwin compiler paths.
+CoreBuildPath = $(abspath $(VendorDir))/prefix/bin:/usr/local/bin:/usr/bin
+
 SSHFSCommit = 24448e2493533ead984d6ca322c583e1a26cc613
 SSHFSMainBlob = 3bd4ec57b3bf7c5eb8aff68dafa6a84264186269
 SSHFSMainTree = 35655f60d37403663238a73b4204cfd64fdca73c
@@ -153,7 +158,7 @@ endif
 	touch $(Status)/root
 
 $(Status)/make: $(Status)/config
-	cd $(SrcDir)/sshfs/build && ninja
+	cd $(SrcDir)/sshfs/build && PATH="$(CoreBuildPath)" ninja
 	touch $(Status)/make
 
 $(Status)/config: $(Status)/patch $(Status)/depcheck $(Status)/vendor-core
@@ -161,10 +166,10 @@ $(Status)/config: $(Status)/patch $(Status)/depcheck $(Status)/vendor-core
 ifeq ($(VendorCore),1)
 	cd $(SrcDir)/sshfs/build && \
 		PKG_CONFIG_PATH="$(abspath $(VendorDir))/prefix/lib/pkgconfig" \
-		PATH="$(abspath $(VendorDir))/prefix/bin:$$PATH" \
+		PATH="$(CoreBuildPath)" \
 		meson setup .. --wrap-mode=nodownload
 else
-	cd $(SrcDir)/sshfs/build && meson setup ..
+	cd $(SrcDir)/sshfs/build && PATH="$(CoreBuildPath)" meson setup ..
 endif
 	touch $(Status)/config
 
