@@ -25,17 +25,40 @@ if "date '+%y%j'" in makefile or "shell date" in makefile:
     failures.append("Makefile: package identity still depends on wall-clock time")
 for token in (
     "VersionFile = $(PrjDir)/VERSION",
+    "WixProject = $(PrjDir)/sshfs-win.wixproj",
     'MyVersion = $(strip $(shell cat "$(VersionFile)"))',
-    "$(Status)/wix: $(Status)/sshfs-win sshfs-win.wxs $(VersionFile)",
+    "$(Status)/wix: $(Status)/sshfs-win sshfs-win.wxs sshfs-win.wixproj $(VersionFile)",
+    "dotnet build",
+    "--property:InstallerPlatform=$(MyArch)",
+    "--property:RootDir=",
     'MyCompanyName = "OzoneAsai"',
     "SigningSubject ?= $(MyCompanyName)",
     "HostArch := $(shell uname -m)",
     "$(error Unsupported build host architecture",
 ):
     if token not in makefile:
-        failures.append(f"Makefile: missing packaging identity/architecture contract {token}")
+        failures.append(f"Makefile: missing packaging identity/toolchain contract {token}")
+for forbidden in ("candle ", "heat dir", "light ", "WixUIExtension"):
+    if forbidden in makefile:
+        failures.append(f"Makefile: legacy WiX v3 pipeline still present: {forbidden!r}")
 if 'MyCompanyName = "Navimatics LLC"' in makefile:
     failures.append("Makefile: fork package still claims the upstream manufacturer identity")
+
+wixproj_path = root / "sshfs-win.wixproj"
+if not wixproj_path.is_file():
+    failures.append("sshfs-win.wixproj: missing WiX v7 SDK project")
+    wixproj = ""
+else:
+    wixproj = wixproj_path.read_text(encoding="utf-8")
+for token in (
+    'Sdk="WixToolset.Sdk/7.0.0"',
+    "<AcceptEula>wix7</AcceptEula>",
+    "<InstallerPlatform",
+    "<DefineConstants>",
+    'PackageReference Include="WixToolset.UI.wixext" Version="7.0.0"',
+):
+    if token not in wixproj:
+        failures.append(f"sshfs-win.wixproj: missing WiX v7 contract {token}")
 
 apply = (root / "tools" / "apply-checkpoint.sh").read_text(encoding="utf-8")
 for token in (
@@ -44,6 +67,7 @@ for token in (
     'verify-sshfs-source.sh" --source-only "$REPO/sshfs"',
     'rm -f -- "$REPO/.gitmodules"',
     'cp "$SELF_DIR/README.md" "$REPO/README.md"',
+    'cp "$SELF_DIR/sshfs-win.wixproj" "$REPO/sshfs-win.wixproj"',
     'cp "$SELF_DIR/.github/workflows/contracts.yml" "$REPO/.github/workflows/contracts.yml"',
     'rm -f -- "$REPO/GroupReadWrite.reg" "$REPO/ServerAliveInterval.reg"',
 ):
@@ -59,17 +83,28 @@ for forbidden in (
         failures.append(f"apply-checkpoint.sh: still depends on target SSHFS Git metadata: {forbidden}")
 
 wxs = (root / "sshfs-win.wxs").read_text(encoding="utf-8")
-if "WOW6432Node" in wxs:
-    failures.append("sshfs-win.wxs: physical WOW6432Node path used instead of MSI registry view")
-if '<?define LauncherRegistryKey="Software\\WinFsp\\Services"?>' not in wxs:
-    failures.append("sshfs-win.wxs: launcher key is not expressed as the logical registry path")
-if 'Disallow="yes"' in wxs:
-    failures.append("sshfs-win.wxs: MajorUpgrade still blocks normal upgrades")
-if 'AllowSameVersionUpgrades="yes"' not in wxs:
-    failures.append("sshfs-win.wxs: same-version rebuilds are not recognized as upgrades")
-
+for token in (
+    'xmlns="http://wixtoolset.org/schemas/v4/wxs"',
+    "<Package",
+    'InstallerVersion="500"',
+    '<StandardDirectory Id="ProgramFiles6432Folder">',
+    '<Files Include="$(RootDir)\\**" Directory="INSTALLDIR" />',
+    'AllowSameVersionUpgrades="yes"',
+    'Value="Software\\WinFsp\\Services"',
+):
+    if token not in wxs:
+        failures.append(f"sshfs-win.wxs: missing WiX v7 authoring contract {token}")
+for forbidden in (
+    "http://schemas.microsoft.com/wix/2006/wi",
+    "<Product",
+    'Win64="no"',
+    "WOW6432Node",
+    "<ComponentGroupRef Id=\"C.Main\"",
+):
+    if forbidden in wxs:
+        failures.append(f"sshfs-win.wxs: legacy WiX v3 authoring remains: {forbidden}")
 for component in ("C.sshfs.reg", "C.sshfs.r.reg", "C.sshfs.k.reg", "C.sshfs.kr.reg"):
-    pattern = rf'<Component\s+Id="{re.escape(component)}"[^>]*\bWin64="no"'
+    pattern = rf'<Component\s+Id="{re.escape(component)}"[^>]*\bBitness="always32"'
     if re.search(pattern, wxs) is None:
         failures.append(f"sshfs-win.wxs: {component} does not explicitly target the 32-bit registry view")
 
@@ -90,4 +125,4 @@ if failures:
     print("\n".join(f"FAIL {failure}" for failure in failures), file=sys.stderr)
     raise SystemExit(1)
 
-print(f"Packaging standard contract: PASS ({version})")
+print(f"Packaging standard contract: PASS ({version}, WiX v7)")
