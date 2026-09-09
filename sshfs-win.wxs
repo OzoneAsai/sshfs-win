@@ -14,7 +14,6 @@
 
     <MajorUpgrade
         AllowDowngrades="no"
-        AllowSameVersionUpgrades="yes"
         DowngradeErrorMessage="A newer version of $(MyProductName) is already installed." />
     <MediaTemplate EmbedCab="yes" />
 
@@ -54,7 +53,7 @@
       <File Name="License.txt" Source="License.txt" KeyPath="yes" />
     </Component>
 
-    <Component Id="C.sshfs.reg" Directory="INSTALLDIR" Guid="{3EF97966-E49E-4A0B-B68D-5EB2BDA61C21}" Bitness="always32">
+    <Component Id="C.sshfs.reg" Directory="TARGETDIR" Guid="{3EF97966-E49E-4A0B-B68D-5EB2BDA61C21}" Bitness="always32">
       <RegistryKey Root="HKLM" Key="[P.LauncherRegistryKey]">
         <RegistryKey Key="sshfs">
           <RegistryValue Type="string" Name="Executable" Value="[INSTALLDIR]bin\sshfs-win.exe" KeyPath="yes" />
@@ -74,7 +73,7 @@
       </RegistryKey>
     </Component>
 
-    <Component Id="C.sshfs.r.reg" Directory="INSTALLDIR" Guid="{F8E1A2DE-2061-42AD-805F-33BF0F75DC35}" Bitness="always32">
+    <Component Id="C.sshfs.r.reg" Directory="TARGETDIR" Guid="{F8E1A2DE-2061-42AD-805F-33BF0F75DC35}" Bitness="always32">
       <RegistryKey Root="HKLM" Key="[P.LauncherRegistryKey]">
         <RegistryKey Key="sshfs.r">
           <RegistryValue Type="string" Name="Executable" Value="[INSTALLDIR]bin\sshfs-win.exe" KeyPath="yes" />
@@ -95,7 +94,7 @@
       </RegistryKey>
     </Component>
 
-    <Component Id="C.sshfs.k.reg" Directory="INSTALLDIR" Guid="{F8E1A2DE-2061-42AD-805F-33BF0F75DC36}" Bitness="always32">
+    <Component Id="C.sshfs.k.reg" Directory="TARGETDIR" Guid="{F8E1A2DE-2061-42AD-805F-33BF0F75DC36}" Bitness="always32">
       <RegistryKey Root="HKLM" Key="[P.LauncherRegistryKey]">
         <RegistryKey Key="sshfs.k">
           <RegistryValue Type="string" Name="Executable" Value="[INSTALLDIR]bin\sshfs-win.exe" KeyPath="yes" />
@@ -115,7 +114,7 @@
       </RegistryKey>
     </Component>
 
-    <Component Id="C.sshfs.kr.reg" Directory="INSTALLDIR" Guid="{44B70FC4-B8C5-4B33-96EF-73D20C517702}" Bitness="always32">
+    <Component Id="C.sshfs.kr.reg" Directory="TARGETDIR" Guid="{44B70FC4-B8C5-4B33-96EF-73D20C517702}" Bitness="always32">
       <RegistryKey Root="HKLM" Key="[P.LauncherRegistryKey]">
         <RegistryKey Key="sshfs.kr">
           <RegistryValue Type="string" Name="Executable" Value="[INSTALLDIR]bin\sshfs-win.exe" KeyPath="yes" />
