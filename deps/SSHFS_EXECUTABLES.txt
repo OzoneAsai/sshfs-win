@@ -1,0 +1,8 @@
+# Canonical 100755 paths in libfuse/sshfs tree 35655f60d37403663238a73b4204cfd64fdca73c
+make_release_tarball.sh
+test/appveyor-build.sh
+test/lint.sh
+test/test_sshfs.py
+test/travis-build.sh
+test/travis-install.sh
+utils/install_helper.sh
