@@ -89,8 +89,8 @@ $(Status)/wix: $(Status)/sshfs-win sshfs-win.wxs sshfs-win.wixproj $(VersionFile
 		--configuration Release \
 		--property:InstallerPlatform=$(MyArch) \
 		--property:OutputName=sshfs-win-$(MyVersion)-$(MyArch) \
-		--property:OutputPath="$(shell cygpath -aw $(WixDir))" \
-		--property:IntermediateOutputPath="$(shell cygpath -aw $(WixDir)/obj)" \
+		--property:OutputPath="$(shell cygpath -am $(WixDir))/" \
+		--property:IntermediateOutputPath="$(shell cygpath -am $(WixDir)/obj)/" \
 		--property:MyProductName=$(MyProductName) \
 		--property:MyCompanyName=$(MyCompanyName) \
 		--property:MyDescription=$(MyDescription) \
