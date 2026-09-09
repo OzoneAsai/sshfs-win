@@ -1,0 +1,70 @@
+name: Source contracts
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Packaging and Windows tooling contracts
+        run: |
+          set -euo pipefail
+          python3 tests/packaging-standard-contract-test.py
+          python3 tests/windows-tooling-static-test.py
+
+      - name: Source and distribution contracts
+        run: |
+          set -euo pipefail
+          bash tests/patch-series-contract-test.sh
+          bash tests/source-archive-self-contained-test.sh
+          bash tests/artifact-hygiene-test.sh
+          bash tests/dist-signing-contract-test.sh
+
+      - name: Shell syntax
+        run: |
+          set -euo pipefail
+          while IFS= read -r file; do
+            bash -n "$file"
+          done < <(find tools tests -type f -name '*.sh' -print | sort)
+
+      - name: Wrapper strict compile
+        run: |
+          set -euo pipefail
+          gcc -std=gnu23 -Wall -Wextra -Werror -I. -c sshfs-win.c -o /tmp/sshfs-win.o
+
+      - name: Strict C contract tests
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/sshfs-win-tests
+          for src in tests/*.c; do
+            exe="/tmp/sshfs-win-tests/$(basename "${src%.c}")"
+            echo "[strict] $src"
+            gcc -std=gnu23 -Wall -Wextra -Werror -pthread "$src" -ldl -o "$exe"
+            "$exe"
+          done
+
+      - name: ASan and UBSan C contract tests
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/sshfs-win-tests-sanitized
+          mkdir -p /tmp/sshfs-win-tests-sanitized
+          for src in tests/*.c; do
+            exe="/tmp/sshfs-win-tests-sanitized/$(basename "${src%.c}")"
+            echo "[asan+ubsan] $src"
+            gcc -std=gnu23 -Wall -Wextra -Werror -pthread \
+              -fsanitize=address,undefined -fno-omit-frame-pointer \
+              "$src" -ldl -o "$exe"
+            "$exe"
+          done
