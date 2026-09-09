@@ -81,3 +81,54 @@ jobs:
               "$src" -ldl -o "$exe"
             "$exe"
           done
+
+  wix-v7:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64, x86]
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v5
+
+      - name: Show .NET SDK
+        shell: pwsh
+        run: dotnet --info
+
+      - name: Create runtime fixture
+        id: fixture
+        shell: pwsh
+        run: |
+          $root = Join-Path $env:RUNNER_TEMP "sshfs-win-root-${{ matrix.arch }}"
+          New-Item -ItemType Directory -Force (Join-Path $root 'bin'), (Join-Path $root 'etc') | Out-Null
+          Set-Content -LiteralPath (Join-Path $root 'bin\sshfs-win.exe') -Value 'fixture-wrapper' -NoNewline
+          Set-Content -LiteralPath (Join-Path $root 'bin\sshfs.exe') -Value 'fixture-core' -NoNewline
+          Set-Content -LiteralPath (Join-Path $root 'etc\runtime-origins.tsv') -Value "sshfs-win.exe`tfixture`tfixture" -NoNewline
+          "root=$root" >> $env:GITHUB_OUTPUT
+
+      - name: Build WiX v7 fixture MSI
+        shell: pwsh
+        run: |
+          $version = (Get-Content -LiteralPath VERSION -Raw).Trim()
+          $out = Join-Path $env:RUNNER_TEMP "wix-out-${{ matrix.arch }}"
+          $obj = Join-Path $env:RUNNER_TEMP "wix-obj-${{ matrix.arch }}"
+          dotnet build .\sshfs-win.wixproj `
+            --configuration Release `
+            "--property:InstallerPlatform=${{ matrix.arch }}" `
+            "--property:OutputName=sshfs-win-$version-${{ matrix.arch }}" `
+            "--property:OutputPath=$out" `
+            "--property:IntermediateOutputPath=$obj" `
+            "--property:MyProductName=SSHFS-Win" `
+            "--property:MyCompanyName=OzoneAsai" `
+            "--property:MyDescription=Modernized SSHFS for Windows" `
+            "--property:MyProductVersion=$version Preview" `
+            "--property:MyProductStage=Beta" `
+            "--property:MyVersion=$version" `
+            "--property:RootDir=${{ steps.fixture.outputs.root }}"
+          $msi = Join-Path $out "sshfs-win-$version-${{ matrix.arch }}.msi"
+          if (-not (Test-Path -LiteralPath $msi)) {
+            throw "WiX v7 build did not produce expected MSI: $msi"
+          }
+          Get-Item -LiteralPath $msi | Format-List FullName, Length
