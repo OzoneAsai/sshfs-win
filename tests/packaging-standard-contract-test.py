@@ -27,9 +27,15 @@ for token in (
     "VersionFile = $(PrjDir)/VERSION",
     'MyVersion = $(strip $(shell cat "$(VersionFile)"))',
     "$(Status)/wix: $(Status)/sshfs-win sshfs-win.wxs $(VersionFile)",
+    'MyCompanyName = "OzoneAsai"',
+    "SigningSubject ?= $(MyCompanyName)",
+    "HostArch := $(shell uname -m)",
+    "$(error Unsupported build host architecture",
 ):
     if token not in makefile:
-        failures.append(f"Makefile: missing deterministic-version contract {token}")
+        failures.append(f"Makefile: missing packaging identity/architecture contract {token}")
+if 'MyCompanyName = "Navimatics LLC"' in makefile:
+    failures.append("Makefile: fork package still claims the upstream manufacturer identity")
 
 apply = (root / "tools" / "apply-checkpoint.sh").read_text(encoding="utf-8")
 if 'cp "$SELF_DIR/VERSION" "$REPO/VERSION"' not in apply:
@@ -52,6 +58,16 @@ for component in ("C.sshfs.reg", "C.sshfs.r.reg", "C.sshfs.k.reg", "C.sshfs.kr.r
 
 if (root / ".gitmodules").exists():
     failures.append(".gitmodules: stale sshfs submodule metadata still present beside vendored source")
+
+readme = (root / "README.md").read_text(encoding="utf-8")
+for token in (
+    "development fork",
+    "not this fork",
+    "vendored, pinned pristine SSHFS source directory",
+    "WiX v7",
+):
+    if token not in readme:
+        failures.append(f"README.md: missing fork/build boundary text {token!r}")
 
 if failures:
     print("\n".join(f"FAIL {failure}" for failure in failures), file=sys.stderr)
