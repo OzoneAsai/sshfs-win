@@ -101,7 +101,7 @@ $(Status)/wix: $(Status)/sshfs-win sshfs-win.wxs sshfs-win.wixproj $(VersionFile
 	test -f "$(WixDir)/sshfs-win-$(MyVersion)-$(MyArch).msi"
 	touch $(Status)/wix
 
-$(Status)/sshfs-win: $(Status)/root sshfs-win.c portable-format.h
+$(Status)/sshfs-win: $(Status)/root sshfs-win.c portable-format.h windows-commandline-parser.h
 	gcc -o $(RootDir)/bin/sshfs-win sshfs-win.c
 	strip $(RootDir)/bin/sshfs-win
 	wrapper="$(RootDir)/bin/sshfs-win"; \
