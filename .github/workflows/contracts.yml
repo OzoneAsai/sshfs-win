@@ -34,6 +34,7 @@ jobs:
           bash tests/source-archive-self-contained-test.sh
           bash tests/artifact-hygiene-test.sh
           bash tests/dist-signing-contract-test.sh
+          bash tests/hermetic-cygwin-tool-path-test.sh
 
       - name: Shell syntax
         run: |
@@ -176,9 +177,9 @@ jobs:
             rm -f "$tmp"
           done < patches/SERIES
 
-          echo '[cygwin] meson+ninja'
+          echo '[cygwin] meson+ninja (warnings are errors)'
           cd "$work/sshfs"
-          meson setup build --wrap-mode=nodownload
+          meson setup build --wrap-mode=nodownload --werror
           ninja -C build
           test -x build/sshfs.exe
 
