@@ -16,25 +16,30 @@ if [[ "$actual" != "$BASE_SHA" ]]; then
     echo "refusing to apply: expected base $BASE_SHA, got $actual" >&2
     exit 3
 fi
-if [[ -n "$(git -C "$REPO" status --porcelain --untracked-files=no --ignore-submodules=all)" ||
-      -n "$(git -C "$REPO/sshfs" status --porcelain --untracked-files=no)" ]]; then
+if [[ -n "$(git -C "$REPO" status --porcelain --untracked-files=no --ignore-submodules=all)" ]]; then
     echo "refusing to apply over tracked local changes" >&2
     exit 4
 fi
 
-if ! git -C "$REPO/sshfs" cat-file -e "$SSHFS_SHA^{commit}" 2>/dev/null; then
-    echo "target SSHFS commit $SSHFS_SHA is not present in the submodule object store" >&2
-    echo "fetch it from https://github.com/libfuse/sshfs before rerunning" >&2
-    exit 5
-fi
+# The checkpoint owns a verified pristine SSHFS source tree. Do not require the
+# target checkout to have initialized submodule metadata or the pinned commit in
+# a nested Git object store; replace that historical representation with the
+# checkpoint's self-contained vendored source instead.
+"$SELF_DIR/tools/verify-sshfs-source.sh" --source-only "$SELF_DIR/sshfs" >/dev/null
+rm -rf -- "$REPO/sshfs"
+cp -a "$SELF_DIR/sshfs" "$REPO/sshfs"
+"$SELF_DIR/tools/verify-sshfs-source.sh" --source-only "$REPO/sshfs" >/dev/null
+rm -f -- "$REPO/.gitmodules"
 
-git -C "$REPO/sshfs" checkout --detach "$SSHFS_SHA"
 cp "$SELF_DIR/Makefile" "$REPO/Makefile"
 cp "$SELF_DIR/VERSION" "$REPO/VERSION"
 cp "$SELF_DIR/CHECKPOINT" "$REPO/CHECKPOINT"
+cp "$SELF_DIR/README.md" "$REPO/README.md"
 cp "$SELF_DIR/sshfs-win.c" "$REPO/sshfs-win.c"
 cp "$SELF_DIR/portable-format.h" "$REPO/portable-format.h"
 cp "$SELF_DIR/sshfs-win.wxs" "$REPO/sshfs-win.wxs"
+rm -f -- "$REPO/GroupReadWrite.reg" "$REPO/ServerAliveInterval.reg"
+
 mkdir -p "$REPO/etc"
 cp "$SELF_DIR/etc/nsswitch.conf" "$REPO/etc/nsswitch.conf"
 cp "$SELF_DIR/etc/ssh_config" "$REPO/etc/ssh_config"
@@ -47,6 +52,7 @@ cp "$SELF_DIR/LAUNCHER_READINESS.md" "$REPO/LAUNCHER_READINESS.md"
 cp "$SELF_DIR/WINDOWS11_COMPAT.md" "$REPO/WINDOWS11_COMPAT.md"
 cp "$SELF_DIR/WINDOWS_UX_CONTRACT.md" "$REPO/WINDOWS_UX_CONTRACT.md"
 cp "$SELF_DIR/WRITE_SAFETY.md" "$REPO/WRITE_SAFETY.md"
+
 mkdir -p "$REPO/deps"
 cp "$SELF_DIR"/deps/* "$REPO/deps/"
 mkdir -p "$REPO/tools"
@@ -57,6 +63,10 @@ find "$SELF_DIR/tests" -maxdepth 1 -type f \
     \( -name '*.c' -o -name '*.inc' -o -name '*.sh' -o -name '*.py' \) \
     -exec cp -p {} "$REPO/tests/" \;
 
+mkdir -p "$REPO/.github/workflows"
+cp "$SELF_DIR/.github/workflows/contracts.yml" "$REPO/.github/workflows/contracts.yml"
+
+mkdir -p "$REPO/patches"
 rm -f "$REPO/patches/30-stdiomode.patch" "$REPO/patches/10-mountpoint.patch" "$REPO/patches/20-mountmgr.patch"
 cp "$SELF_DIR"/patches/*.patch "$REPO/patches/"
 cp "$SELF_DIR/patches/SERIES" "$REPO/patches/SERIES"
@@ -73,4 +83,5 @@ done
 
 echo "checkpoint applied"
 echo "base:  $BASE_SHA"
-echo "sshfs: $SSHFS_SHA"
+echo "sshfs: $SSHFS_SHA (vendored verified source)"
+echo "stage the transformed tree with: git -C '$REPO' add -A"
