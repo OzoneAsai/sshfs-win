@@ -5,7 +5,6 @@
     <InstallerPlatform Condition="'$(InstallerPlatform)' == ''">x64</InstallerPlatform>
     <Pedantic>true</Pedantic>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <DefineConstants>MyProductName=$(MyProductName);MyCompanyName=$(MyCompanyName);MyDescription=$(MyDescription);MyProductVersion=$(MyProductVersion);MyProductStage=$(MyProductStage);MyVersion=$(MyVersion);MyArch=$(InstallerPlatform);UpgradeCode=$(UpgradeCode);OtherUpgradeCode=$(OtherUpgradeCode);RootDir=$(RootDir)</DefineConstants>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(InstallerPlatform)' == 'x64'">
@@ -16,6 +15,10 @@
   <PropertyGroup Condition="'$(InstallerPlatform)' == 'x86'">
     <UpgradeCode>DC1B144B-4B64-4245-BC57-959267714315</UpgradeCode>
     <OtherUpgradeCode>3576E993-BFE0-4707-B6F6-7F26BF88300B</OtherUpgradeCode>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <DefineConstants>MyProductName=$(MyProductName);MyCompanyName=$(MyCompanyName);MyDescription=$(MyDescription);MyProductVersion=$(MyProductVersion);MyProductStage=$(MyProductStage);MyVersion=$(MyVersion);MyArch=$(InstallerPlatform);UpgradeCode=$(UpgradeCode);OtherUpgradeCode=$(OtherUpgradeCode);RootDir=$(RootDir)</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
