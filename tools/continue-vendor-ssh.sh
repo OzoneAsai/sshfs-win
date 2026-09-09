@@ -21,6 +21,7 @@ JOBS=${NUMBER_OF_PROCESSORS:-4}
 }
 mkdir -p "$RUNTIME/bin"
 touch "$MAP"
+vendor_ssh_use_tool_path "$PREFIX"
 
 make -C "$SRC/openssl" install_sw
 vendor_ssh_register_openssl_runtime "$PREFIX" "$MAP"
