@@ -147,8 +147,7 @@ jobs:
 
           work=$(mktemp -d)
           trap 'rm -rf "$work"' EXIT
-          cp -a sshfs "$work/sshfs"
-          tools/verify-sshfs-source.sh --source-only "$work/sshfs"
+          tools/stage-sshfs-source.sh "$workspace/sshfs" "$work/sshfs"
 
           echo '[cygwin] patch series'
           while IFS= read -r name || test -n "$name"; do
