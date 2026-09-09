@@ -92,6 +92,8 @@ if 'cp "$SELF_DIR/portable-format.h" "$REPO/portable-format.h"' not in apply:
     failures.append("apply-checkpoint.sh: must carry portable-format.h with sshfs-win.c")
 if 'cp "$SELF_DIR/windows-commandline-parser.h" "$REPO/windows-commandline-parser.h"' not in apply:
     failures.append("apply-checkpoint.sh: must carry the shared Windows command-line parser")
+if '"$SELF_DIR/tools/stage-sshfs-source.sh" "$SELF_DIR/sshfs" "$REPO/sshfs"' not in apply:
+    failures.append("apply-checkpoint.sh: must use verified portable SSHFS source staging")
 if "-name '*.py'" not in apply or "-name '*.sh'" not in apply:
     failures.append("apply-checkpoint.sh: must carry checkpoint-owned shell/Python tests")
 if "top_level_patches=(" not in apply or "shopt -s nullglob" not in apply:
@@ -160,6 +162,17 @@ for token in ("RegistryView]::Registry64", "RegistryView]::Registry32"):
 if "WOW6432Node" in repair:
     failures.append("repair-test-registration.ps1: physical WOW6432Node path used instead of registry views")
 
+stager = (tools / "stage-sshfs-source.sh").read_text(encoding="utf-8")
+for token in (
+    'verify-sshfs-source.sh" --source-only "$SRC"',
+    'cp -R -- "$SRC" "$DST"',
+    'verify-sshfs-source.sh" --source-only "$DST"',
+):
+    if token not in stager:
+        failures.append(f"stage-sshfs-source.sh: missing verified staging contract {token}")
+if "cp -a" in stager:
+    failures.append("stage-sshfs-source.sh: must not preserve Cygwin/NTFS directory ACL metadata with cp -a")
+
 makefile = (root / "Makefile").read_text(encoding="utf-8")
 if "meson setup .." not in makefile or "\n\t\tmeson .." in makefile:
     failures.append("Makefile: must use explicit 'meson setup' command")
@@ -167,10 +180,10 @@ if "$(Status)/sshfs-win: $(Status)/root sshfs-win.c portable-format.h windows-co
     failures.append("Makefile: wrapper target must depend on both shared headers")
 if "git -c core.autocrlf=false clone $(PrjDir)/sshfs" in makefile:
     failures.append("Makefile: bundled SSHFS staging must not require nested .git metadata")
-if 'cp -a "$(PrjDir)/sshfs" "$(SrcDir)/sshfs"' not in makefile:
-    failures.append("Makefile: bundled plain SSHFS source must be copied into the build tree")
-if 'verify-sshfs-source.sh --source-only "$(SrcDir)/sshfs"' not in makefile:
-    failures.append("Makefile: staged SSHFS source identity is not verified")
+if 'tools/stage-sshfs-source.sh "$(PrjDir)/sshfs" "$(SrcDir)/sshfs"' not in makefile:
+    failures.append("Makefile: bundled SSHFS source must use the verified portable staging helper")
+if 'cp -a "$(PrjDir)/sshfs"' in makefile:
+    failures.append("Makefile: must not use cp -a for Cygwin/NTFS SSHFS staging")
 if "git clean -dffx" in makefile or 'rm -rf -- "$(PrjDir)/.build"' not in makefile:
     failures.append("Makefile: clean target must work from a source archive without git metadata")
 verifier = (tools / "verify-sshfs-source.sh").read_text(encoding="utf-8")
