@@ -28,6 +28,7 @@ check_cmd() {
 }
 
 check_cmd cygwin 3.6.10 uname -r
+check_cmd dotnet 6.0 dotnet --version
 if [[ "$mode" != "--bootstrap" ]]; then
     check_cmd glib-2.0 2.88.3 pkg-config --modversion glib-2.0
 fi
