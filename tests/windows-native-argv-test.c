@@ -4,7 +4,7 @@
 #include <string.h>
 #include <wchar.h>
 
-#include "windows-native-argv-parser.inc"
+#include "../windows-commandline-parser.h"
 
 static char *dup_cstr(const char *s)
 {
@@ -190,6 +190,6 @@ int main(void)
     roundtrip(a3, 5);
     roundtrip(a4, 5);
     property_roundtrips();
-    puts("windows-native-argv-test: PASS (Microsoft corpus + 2000 property round-trips)");
+    puts("windows-native-argv-test: PASS (production parser, Microsoft corpus + 2000 property round-trips)");
     return 0;
 }
