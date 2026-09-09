@@ -90,6 +90,8 @@ if 'cp -p "$SELF_DIR"/tools/* "$REPO/tools/"' not in apply:
     failures.append("apply-checkpoint.sh: must apply the complete checkpoint-owned tools directory")
 if 'cp "$SELF_DIR/portable-format.h" "$REPO/portable-format.h"' not in apply:
     failures.append("apply-checkpoint.sh: must carry portable-format.h with sshfs-win.c")
+if 'cp "$SELF_DIR/windows-commandline-parser.h" "$REPO/windows-commandline-parser.h"' not in apply:
+    failures.append("apply-checkpoint.sh: must carry the shared Windows command-line parser")
 if "-name '*.py'" not in apply or "-name '*.sh'" not in apply:
     failures.append("apply-checkpoint.sh: must carry checkpoint-owned shell/Python tests")
 if "top_level_patches=(" not in apply or "shopt -s nullglob" not in apply:
@@ -104,16 +106,26 @@ if "asprintf(" in wrapper:
     failures.append("sshfs-win.c: depends on asprintf instead of the shared portable formatter")
 if '#include "portable-format.h"' not in wrapper:
     failures.append("sshfs-win.c: missing portable-format.h")
+if '#include "windows-commandline-parser.h"' not in wrapper:
+    failures.append("sshfs-win.c: does not use the shared production Windows argv parser")
+if "static int win32_parse_command_line_utf8" in wrapper:
+    failures.append("sshfs-win.c: duplicates the shared Windows argv parser implementation")
 for name in ("stallopt", "handleopt", "limitopt", "maxconnopt"):
     if f"char {name}[64];" in wrapper:
         failures.append(f"sshfs-win.c: {name} has block lifetime but is retained in exec argv")
 
-parser_fixture = (root / "tests" / "windows-native-argv-parser.inc").read_text(encoding="utf-8")
-for parser_name, parser_text in (("sshfs-win.c", wrapper), ("windows-native-argv-parser.inc", parser_fixture)):
-    if "0 == backslashes && quoted && '\"' == src[1]" not in parser_text:
-        failures.append(f"{parser_name}: missing Microsoft CRT doubled-quote rule")
-    if "if (!quoted && (' ' == *src || '\\t' == *src))" not in parser_text:
-        failures.append(f"{parser_name}: missing post-backslash unquoted-whitespace delimiter rule")
+parser = (root / "windows-commandline-parser.h").read_text(encoding="utf-8")
+for token, description in (
+    ("0 == backslashes && quoted && '\"' == src[1]", "Microsoft CRT doubled-quote rule"),
+    ("if (!quoted && (' ' == *src || '\\t' == *src))", "post-backslash unquoted-whitespace delimiter rule"),
+):
+    if token not in parser:
+        failures.append(f"windows-commandline-parser.h: missing {description}")
+if (root / "tests" / "windows-native-argv-parser.inc").exists():
+    failures.append("tests/windows-native-argv-parser.inc: duplicate parser fixture must not exist")
+argv_test = (root / "tests" / "windows-native-argv-test.c").read_text(encoding="utf-8")
+if '#include "../windows-commandline-parser.h"' not in argv_test:
+    failures.append("windows-native-argv-test.c: must test the shared production parser")
 
 cp30_patch = (root / "patches" / "90-concurrency-and-write-contract.patch").read_text(encoding="utf-8")
 for token in ("get_conn_locked", "sshfs_write_reply_error", "write_error = sf->write_error"):
@@ -151,8 +163,8 @@ if "WOW6432Node" in repair:
 makefile = (root / "Makefile").read_text(encoding="utf-8")
 if "meson setup .." not in makefile or "\n\t\tmeson .." in makefile:
     failures.append("Makefile: must use explicit 'meson setup' command")
-if "$(Status)/sshfs-win: $(Status)/root sshfs-win.c portable-format.h" not in makefile:
-    failures.append("Makefile: wrapper target must depend on portable-format.h")
+if "$(Status)/sshfs-win: $(Status)/root sshfs-win.c portable-format.h windows-commandline-parser.h" not in makefile:
+    failures.append("Makefile: wrapper target must depend on both shared headers")
 if "git -c core.autocrlf=false clone $(PrjDir)/sshfs" in makefile:
     failures.append("Makefile: bundled SSHFS staging must not require nested .git metadata")
 if 'cp -a "$(PrjDir)/sshfs" "$(SrcDir)/sshfs"' not in makefile:
