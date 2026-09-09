@@ -10,6 +10,7 @@ runtime="$root/.build/x64/vendor/runtime"
 prefix="$root/.build/x64/vendor/prefix"
 ssh_src="$root/.build/x64/vendor/src/openssh/$OPENSSH_BUILD_TARGET"
 map="$root/.build/x64/vendor/vendor-source-map.tsv"
+vendor_ssh_use_tool_path "$prefix"
 
 [[ -f "$ssh_src" ]] || {
     echo "built OpenSSH target missing: $ssh_src" >&2
