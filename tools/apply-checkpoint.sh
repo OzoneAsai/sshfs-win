@@ -38,6 +38,7 @@ cp "$SELF_DIR/README.md" "$REPO/README.md"
 cp "$SELF_DIR/sshfs-win.c" "$REPO/sshfs-win.c"
 cp "$SELF_DIR/portable-format.h" "$REPO/portable-format.h"
 cp "$SELF_DIR/sshfs-win.wxs" "$REPO/sshfs-win.wxs"
+cp "$SELF_DIR/sshfs-win.wixproj" "$REPO/sshfs-win.wixproj"
 rm -f -- "$REPO/GroupReadWrite.reg" "$REPO/ServerAliveInterval.reg"
 
 mkdir -p "$REPO/etc"
