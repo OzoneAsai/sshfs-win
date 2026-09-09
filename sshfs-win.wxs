@@ -2,16 +2,15 @@
 
 <?define UpgradeCode64="3576E993-BFE0-4707-B6F6-7F26BF88300B"?>
 <?define UpgradeCode32="DC1B144B-4B64-4245-BC57-959267714315"?>
+<?define LauncherRegistryKey="Software\WinFsp\Services"?>
 <?if $(var.MyArch) = x64?>
     <?define UpgradeCode="$(var.UpgradeCode64)"?>
     <?define OtherUpgradeCode="$(var.UpgradeCode32)"?>
     <?define ProgramFilesFolder="ProgramFiles64Folder"?>
-    <?define LauncherRegistryKey="Software\WOW6432Node\WinFsp\Services"?>
 <?else?>
     <?define UpgradeCode="$(var.UpgradeCode32)"?>
     <?define OtherUpgradeCode="$(var.UpgradeCode64)"?>
     <?define ProgramFilesFolder="ProgramFilesFolder"?>
-    <?define LauncherRegistryKey="Software\WinFsp\Services"?>
 <?endif?>
 
 <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
@@ -29,10 +28,8 @@
             Compressed="yes"
             InstallScope="perMachine" />
         <MajorUpgrade
-            Disallow="yes"
             AllowDowngrades="no"
-            AllowSameVersionUpgrades="no"
-            DisallowUpgradeErrorMessage="An older version of $(var.MyProductName) is already installed. You must uninstall it before you can install this version."
+            AllowSameVersionUpgrades="yes"
             DowngradeErrorMessage="A newer version of $(var.MyProductName) is already installed." />
         <Media Id="1" Cabinet="sshfs_win.cab" EmbedCab="yes" />
 
@@ -73,259 +70,81 @@
             <Component Id="C.License.txt">
                 <File Name="License.txt" Source="License.txt" KeyPath="yes" />
             </Component>
-            <Component Id="C.sshfs.reg" Guid="{3EF97966-E49E-4A0B-B68D-5EB2BDA61C21}">
-                <RegistryKey
-                    Root="HKLM"
-                    Key="[P.LauncherRegistryKey]">
-                    <RegistryKey
-                        Key="sshfs">
-                        <RegistryValue
-                            Type="string"
-                            Name="Executable"
-                            Value="[INSTALLDIR]bin\sshfs-win.exe"
-                            KeyPath="yes" />
-                        <RegistryValue
-                            Type="string"
-                            Name="CommandLine"
-                            Value="svc %1 %2 %U" />
-                        <RegistryValue
-                            Type="string"
-        Name="RunAs"
-        Value="." />
-    <RegistryValue
-        Type="integer"
-        Name="sshfs.reconnect"
-        Value="0" />
-    <RegistryValue
-        Type="integer"
-            Name="sshfs.delay_connect"
-            Value="0" />
-        <RegistryValue
-            Type="integer"
-            Name="sshfs.sync_write"
-            Value="1" />
-        <RegistryValue
-            Type="integer"
-        Name="sshfs.stall_warn"
-        Value="0" />
-    <RegistryValue
-            Type="integer"
-            Name="sshfs.handle_warn"
-            Value="0" />
-        <RegistryValue
-            Type="integer"
-            Name="sshfs.handle_limit"
-            Value="0" />
-        <RegistryValue
-            Type="integer"
-            Name="sshfs.max_conns"
-            Value="1" />
-        <RegistryValue
-        Type="string"
-                            Name="Security"
-                            Value="D:P(A;;RPWPLC;;;WD)" />
-                        <RegistryValue
-                            Type="integer"
-                            Name="JobControl"
-                            Value="1" />
-                        <RegistryValue
-                            Type="integer"
-                            Name="Credentials"
-                            Value="1" />
+            <Component Id="C.sshfs.reg" Guid="{3EF97966-E49E-4A0B-B68D-5EB2BDA61C21}" Win64="no">
+                <RegistryKey Root="HKLM" Key="[P.LauncherRegistryKey]">
+                    <RegistryKey Key="sshfs">
+                        <RegistryValue Type="string" Name="Executable" Value="[INSTALLDIR]bin\sshfs-win.exe" KeyPath="yes" />
+                        <RegistryValue Type="string" Name="CommandLine" Value="svc %1 %2 %U" />
+                        <RegistryValue Type="string" Name="RunAs" Value="." />
+                        <RegistryValue Type="integer" Name="sshfs.reconnect" Value="0" />
+                        <RegistryValue Type="integer" Name="sshfs.delay_connect" Value="0" />
+                        <RegistryValue Type="integer" Name="sshfs.sync_write" Value="1" />
+                        <RegistryValue Type="integer" Name="sshfs.stall_warn" Value="0" />
+                        <RegistryValue Type="integer" Name="sshfs.handle_warn" Value="0" />
+                        <RegistryValue Type="integer" Name="sshfs.handle_limit" Value="0" />
+                        <RegistryValue Type="integer" Name="sshfs.max_conns" Value="1" />
+                        <RegistryValue Type="string" Name="Security" Value="D:P(A;;RPWPLC;;;WD)" />
+                        <RegistryValue Type="integer" Name="JobControl" Value="1" />
+                        <RegistryValue Type="integer" Name="Credentials" Value="1" />
                     </RegistryKey>
                 </RegistryKey>
             </Component>
-            <Component Id="C.sshfs.r.reg" Guid="{F8E1A2DE-2061-42AD-805F-33BF0F75DC35}">
-                <RegistryKey
-                    Root="HKLM"
-                    Key="[P.LauncherRegistryKey]">
-                    <RegistryKey
-                        Key="sshfs.r">
-                        <RegistryValue
-                            Type="string"
-                            Name="Executable"
-                            Value="[INSTALLDIR]bin\sshfs-win.exe"
-                            KeyPath="yes" />
-                        <RegistryValue
-                            Type="string"
-                            Name="CommandLine"
-                            Value="svc %1 %2 %U" />
-                        <RegistryValue
-                            Type="string"
-        Name="RunAs"
-        Value="." />
-    <RegistryValue
-        Type="integer"
-        Name="sshfs.reconnect"
-        Value="0" />
-    <RegistryValue
-        Type="integer"
-            Name="sshfs.delay_connect"
-            Value="0" />
-        <RegistryValue
-            Type="integer"
-            Name="sshfs.sync_write"
-            Value="1" />
-        <RegistryValue
-            Type="integer"
-        Name="sshfs.stall_warn"
-        Value="0" />
-    <RegistryValue
-            Type="integer"
-            Name="sshfs.handle_warn"
-            Value="0" />
-        <RegistryValue
-            Type="integer"
-            Name="sshfs.handle_limit"
-            Value="0" />
-        <RegistryValue
-            Type="integer"
-            Name="sshfs.max_conns"
-            Value="1" />
-        <RegistryValue
-        Type="string"
-                            Name="Security"
-                            Value="D:P(A;;RPWPLC;;;WD)" />
-                        <RegistryValue
-                            Type="integer"
-                            Name="JobControl"
-                            Value="1" />
-                        <RegistryValue
-                            Type="integer"
-                            Name="Credentials"
-                            Value="1" />
-                        <RegistryValue
-                            Type="integer"
-                            Name="sshfs.rootdir"
-                            Value="1" />
+            <Component Id="C.sshfs.r.reg" Guid="{F8E1A2DE-2061-42AD-805F-33BF0F75DC35}" Win64="no">
+                <RegistryKey Root="HKLM" Key="[P.LauncherRegistryKey]">
+                    <RegistryKey Key="sshfs.r">
+                        <RegistryValue Type="string" Name="Executable" Value="[INSTALLDIR]bin\sshfs-win.exe" KeyPath="yes" />
+                        <RegistryValue Type="string" Name="CommandLine" Value="svc %1 %2 %U" />
+                        <RegistryValue Type="string" Name="RunAs" Value="." />
+                        <RegistryValue Type="integer" Name="sshfs.reconnect" Value="0" />
+                        <RegistryValue Type="integer" Name="sshfs.delay_connect" Value="0" />
+                        <RegistryValue Type="integer" Name="sshfs.sync_write" Value="1" />
+                        <RegistryValue Type="integer" Name="sshfs.stall_warn" Value="0" />
+                        <RegistryValue Type="integer" Name="sshfs.handle_warn" Value="0" />
+                        <RegistryValue Type="integer" Name="sshfs.handle_limit" Value="0" />
+                        <RegistryValue Type="integer" Name="sshfs.max_conns" Value="1" />
+                        <RegistryValue Type="string" Name="Security" Value="D:P(A;;RPWPLC;;;WD)" />
+                        <RegistryValue Type="integer" Name="JobControl" Value="1" />
+                        <RegistryValue Type="integer" Name="Credentials" Value="1" />
+                        <RegistryValue Type="integer" Name="sshfs.rootdir" Value="1" />
                     </RegistryKey>
                 </RegistryKey>
             </Component>
-            <Component Id="C.sshfs.k.reg" Guid="{F8E1A2DE-2061-42AD-805F-33BF0F75DC36}">
-                <RegistryKey
-                    Root="HKLM"
-                    Key="[P.LauncherRegistryKey]">
-                    <RegistryKey
-                        Key="sshfs.k">
-                        <RegistryValue
-                            Type="string"
-                            Name="Executable"
-                            Value="[INSTALLDIR]bin\sshfs-win.exe"
-                            KeyPath="yes" />
-                        <RegistryValue
-                            Type="string"
-                            Name="CommandLine"
-                            Value="svc %1 %2 %U" />
-                        <RegistryValue
-                            Type="string"
-        Name="RunAs"
-        Value="." />
-    <RegistryValue
-        Type="integer"
-        Name="sshfs.reconnect"
-        Value="0" />
-    <RegistryValue
-        Type="integer"
-            Name="sshfs.delay_connect"
-            Value="1" />
-        <RegistryValue
-            Type="integer"
-            Name="sshfs.sync_write"
-            Value="1" />
-        <RegistryValue
-            Type="integer"
-        Name="sshfs.stall_warn"
-        Value="0" />
-    <RegistryValue
-            Type="integer"
-            Name="sshfs.handle_warn"
-            Value="0" />
-        <RegistryValue
-            Type="integer"
-            Name="sshfs.handle_limit"
-            Value="0" />
-        <RegistryValue
-            Type="integer"
-            Name="sshfs.max_conns"
-            Value="1" />
-        <RegistryValue
-        Type="string"
-                            Name="Security"
-                            Value="D:P(A;;RPWPLC;;;WD)" />
-                        <RegistryValue
-                            Type="integer"
-                            Name="JobControl"
-                            Value="1" />
-                        <RegistryValue
-                            Type="integer"
-                            Name="Credentials"
-                            Value="0" />
+            <Component Id="C.sshfs.k.reg" Guid="{F8E1A2DE-2061-42AD-805F-33BF0F75DC36}" Win64="no">
+                <RegistryKey Root="HKLM" Key="[P.LauncherRegistryKey]">
+                    <RegistryKey Key="sshfs.k">
+                        <RegistryValue Type="string" Name="Executable" Value="[INSTALLDIR]bin\sshfs-win.exe" KeyPath="yes" />
+                        <RegistryValue Type="string" Name="CommandLine" Value="svc %1 %2 %U" />
+                        <RegistryValue Type="string" Name="RunAs" Value="." />
+                        <RegistryValue Type="integer" Name="sshfs.reconnect" Value="0" />
+                        <RegistryValue Type="integer" Name="sshfs.delay_connect" Value="1" />
+                        <RegistryValue Type="integer" Name="sshfs.sync_write" Value="1" />
+                        <RegistryValue Type="integer" Name="sshfs.stall_warn" Value="0" />
+                        <RegistryValue Type="integer" Name="sshfs.handle_warn" Value="0" />
+                        <RegistryValue Type="integer" Name="sshfs.handle_limit" Value="0" />
+                        <RegistryValue Type="integer" Name="sshfs.max_conns" Value="1" />
+                        <RegistryValue Type="string" Name="Security" Value="D:P(A;;RPWPLC;;;WD)" />
+                        <RegistryValue Type="integer" Name="JobControl" Value="1" />
+                        <RegistryValue Type="integer" Name="Credentials" Value="0" />
                     </RegistryKey>
                 </RegistryKey>
             </Component>
-            <Component Id="C.sshfs.kr.reg" Guid="{44B70FC4-B8C5-4B33-96EF-73D20C517702}">
-                <RegistryKey
-                    Root="HKLM"
-                    Key="[P.LauncherRegistryKey]">
-                    <RegistryKey
-                        Key="sshfs.kr">
-                        <RegistryValue
-                            Type="string"
-                            Name="Executable"
-                            Value="[INSTALLDIR]bin\sshfs-win.exe"
-                            KeyPath="yes" />
-                        <RegistryValue
-                            Type="string"
-                            Name="CommandLine"
-                            Value="svc %1 %2 %U" />
-                        <RegistryValue
-                            Type="string"
-        Name="RunAs"
-        Value="." />
-    <RegistryValue
-        Type="integer"
-        Name="sshfs.reconnect"
-        Value="0" />
-    <RegistryValue
-        Type="integer"
-            Name="sshfs.delay_connect"
-            Value="1" />
-        <RegistryValue
-            Type="integer"
-            Name="sshfs.sync_write"
-            Value="1" />
-        <RegistryValue
-            Type="integer"
-        Name="sshfs.stall_warn"
-        Value="0" />
-    <RegistryValue
-            Type="integer"
-            Name="sshfs.handle_warn"
-            Value="0" />
-        <RegistryValue
-            Type="integer"
-            Name="sshfs.handle_limit"
-            Value="0" />
-        <RegistryValue
-            Type="integer"
-            Name="sshfs.max_conns"
-            Value="1" />
-        <RegistryValue
-        Type="string"
-                            Name="Security"
-                            Value="D:P(A;;RPWPLC;;;WD)" />
-                        <RegistryValue
-                            Type="integer"
-                            Name="JobControl"
-                            Value="1" />
-                        <RegistryValue
-                            Type="integer"
-                            Name="Credentials"
-                            Value="0" />
-                        <RegistryValue
-                            Type="integer"
-                            Name="sshfs.rootdir"
-                            Value="1" />
+            <Component Id="C.sshfs.kr.reg" Guid="{44B70FC4-B8C5-4B33-96EF-73D20C517702}" Win64="no">
+                <RegistryKey Root="HKLM" Key="[P.LauncherRegistryKey]">
+                    <RegistryKey Key="sshfs.kr">
+                        <RegistryValue Type="string" Name="Executable" Value="[INSTALLDIR]bin\sshfs-win.exe" KeyPath="yes" />
+                        <RegistryValue Type="string" Name="CommandLine" Value="svc %1 %2 %U" />
+                        <RegistryValue Type="string" Name="RunAs" Value="." />
+                        <RegistryValue Type="integer" Name="sshfs.reconnect" Value="0" />
+                        <RegistryValue Type="integer" Name="sshfs.delay_connect" Value="1" />
+                        <RegistryValue Type="integer" Name="sshfs.sync_write" Value="1" />
+                        <RegistryValue Type="integer" Name="sshfs.stall_warn" Value="0" />
+                        <RegistryValue Type="integer" Name="sshfs.handle_warn" Value="0" />
+                        <RegistryValue Type="integer" Name="sshfs.handle_limit" Value="0" />
+                        <RegistryValue Type="integer" Name="sshfs.max_conns" Value="1" />
+                        <RegistryValue Type="string" Name="Security" Value="D:P(A;;RPWPLC;;;WD)" />
+                        <RegistryValue Type="integer" Name="JobControl" Value="1" />
+                        <RegistryValue Type="integer" Name="Credentials" Value="0" />
+                        <RegistryValue Type="integer" Name="sshfs.rootdir" Value="1" />
                     </RegistryKey>
                 </RegistryKey>
             </Component>
