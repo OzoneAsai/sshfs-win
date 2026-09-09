@@ -7,6 +7,13 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
 
+  <!--
+    This modernization fork intentionally keeps the historical SSHFS-Win
+    UpgradeCodes. It owns the same install directory and WinFsp Launcher class
+    names as upstream, so it is an in-place compatibility line, not a
+    side-by-side product. A distinct UpgradeCode without distinct resources
+    would let two MSI products contend for the same files and registry keys.
+  -->
   <PropertyGroup Condition="'$(InstallerPlatform)' == 'x64'">
     <UpgradeCode>3576E993-BFE0-4707-B6F6-7F26BF88300B</UpgradeCode>
     <OtherUpgradeCode>DC1B144B-4B64-4245-BC57-959267714315</OtherUpgradeCode>
