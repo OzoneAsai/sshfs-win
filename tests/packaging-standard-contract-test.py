@@ -81,8 +81,7 @@ if wixproj_root is not None:
 apply = (root / "tools" / "apply-checkpoint.sh").read_text(encoding="utf-8")
 for token in (
     'cp "$SELF_DIR/VERSION" "$REPO/VERSION"',
-    'cp -a "$SELF_DIR/sshfs" "$REPO/sshfs"',
-    'verify-sshfs-source.sh" --source-only "$REPO/sshfs"',
+    '"$SELF_DIR/tools/stage-sshfs-source.sh" "$SELF_DIR/sshfs" "$REPO/sshfs"',
     'rm -f -- "$REPO/.gitmodules"',
     'cp "$SELF_DIR/README.md" "$REPO/README.md"',
     'cp "$SELF_DIR/sshfs-win.wixproj" "$REPO/sshfs-win.wixproj"',
@@ -96,9 +95,21 @@ for forbidden in (
     'git -C "$REPO/sshfs" checkout',
     'git -C "$REPO/sshfs" status',
     "submodule object store",
+    'cp -a "$SELF_DIR/sshfs"',
 ):
     if forbidden in apply:
-        fail(f"apply-checkpoint.sh: still depends on target SSHFS Git metadata: {forbidden}")
+        fail(f"apply-checkpoint.sh: still depends on non-portable target/source metadata: {forbidden}")
+
+stager = (root / "tools" / "stage-sshfs-source.sh").read_text(encoding="utf-8")
+for token in (
+    'verify-sshfs-source.sh" --source-only "$SRC"',
+    'cp -R -- "$SRC" "$DST"',
+    'verify-sshfs-source.sh" --source-only "$DST"',
+):
+    if token not in stager:
+        fail(f"stage-sshfs-source.sh: missing verified staging contract {token}")
+if "cp -a" in stager:
+    fail("stage-sshfs-source.sh: must not preserve Cygwin/NTFS ACL metadata with cp -a")
 
 WXS_NS = "http://wixtoolset.org/schemas/v4/wxs"
 UI_NS = "http://wixtoolset.org/schemas/v4/wxs/ui"
