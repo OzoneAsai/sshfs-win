@@ -19,6 +19,9 @@ chmod +x "$tmp/mock/bin/cygpath"
 
 cat > "$tmp/tools/signtool" <<'EOF'
 #!/usr/bin/env bash
+if [[ -n "${SIGN_ARGS:-}" ]]; then
+    printf '%s\n' "$@" > "$SIGN_ARGS"
+fi
 exit "${SIGN_RC:-1}"
 EOF
 chmod +x "$tmp/tools/signtool"
@@ -30,11 +33,15 @@ status="$tmp/.build/x64/status/dist"
 printf 'fixture-msi\n' > "$src"
 touch "$tmp/.build/x64/status/wix"
 
-run_make() {
-    (
-        cd "$tmp"
-        PATH="$tmp/mock/bin:$PATH" WIX="$tmp/mock" "$@" make -f Makefile ".build/x64/status/dist"
-    )
+# Legacy signing selectors must be opt-in, not inherited from the historical
+# Navimatics/DigiCert packaging identity.
+grep -Eq '^SigningIssuer[[:space:]]*\?=[[:space:]]*$' "$tmp/Makefile" || {
+    echo "SigningIssuer must default to empty" >&2
+    exit 10
+}
+grep -Eq '^SigningCrossCert[[:space:]]*\?=[[:space:]]*$' "$tmp/Makefile" || {
+    echo "SigningCrossCert must default to empty" >&2
+    exit 11
 }
 
 # Signing failure must not publish a final artifact or completion marker.
@@ -64,13 +71,34 @@ cmp -s "$src" "$dst" || {
     exit 4
 }
 
-# A signed build also publishes only after the signing command succeeds.
-rm -f "$dst" "$status"
-SIGN_RC=0 PATH="$tmp/mock/bin:$PATH" WIX="$tmp/mock" \
+# A signed build also publishes only after the signing command succeeds. The
+# default command must not inject a legacy cross-certificate or issuer filter.
+rm -f "$dst" "$status" "$tmp/sign.args"
+SIGN_RC=0 SIGN_ARGS="$tmp/sign.args" PATH="$tmp/mock/bin:$PATH" WIX="$tmp/mock" \
     make -C "$tmp" -f Makefile -o ".build/x64/status/wix" ".build/x64/status/dist" >/dev/null
 [[ -f "$dst" && -f "$status" ]] || {
     echo "successful signing did not publish artifact" >&2
     exit 5
+}
+if grep -Fxq '/ac' "$tmp/sign.args" || grep -Fxq '/i' "$tmp/sign.args"; then
+    echo "default signing unexpectedly used a legacy cross-certificate or issuer selector" >&2
+    exit 6
+fi
+
+# Compatibility selectors remain available only when a maintainer explicitly
+# requests them for a particular certificate setup.
+rm -f "$dst" "$status" "$tmp/sign.args"
+SIGN_RC=0 SIGN_ARGS="$tmp/sign.args" PATH="$tmp/mock/bin:$PATH" WIX="$tmp/mock" \
+    make -C "$tmp" -f Makefile -o ".build/x64/status/wix" \
+    SigningIssuer='"Example CA"' SigningCrossCert='"legacy.cer"' \
+    ".build/x64/status/dist" >/dev/null
+[[ $(grep -Fxc '/ac' "$tmp/sign.args") -eq 1 ]] || {
+    echo "explicit SigningCrossCert did not enable /ac" >&2
+    exit 7
+}
+[[ $(grep -Fxc '/i' "$tmp/sign.args") -eq 1 ]] || {
+    echo "explicit SigningIssuer did not enable /i" >&2
+    exit 8
 }
 
 echo "distribution signing contract: PASS"
