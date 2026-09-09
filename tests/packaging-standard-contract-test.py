@@ -38,8 +38,25 @@ if 'MyCompanyName = "Navimatics LLC"' in makefile:
     failures.append("Makefile: fork package still claims the upstream manufacturer identity")
 
 apply = (root / "tools" / "apply-checkpoint.sh").read_text(encoding="utf-8")
-if 'cp "$SELF_DIR/VERSION" "$REPO/VERSION"' not in apply:
-    failures.append("apply-checkpoint.sh: VERSION is not propagated with the checkpoint")
+for token in (
+    'cp "$SELF_DIR/VERSION" "$REPO/VERSION"',
+    'cp -a "$SELF_DIR/sshfs" "$REPO/sshfs"',
+    'verify-sshfs-source.sh" --source-only "$REPO/sshfs"',
+    'rm -f -- "$REPO/.gitmodules"',
+    'cp "$SELF_DIR/README.md" "$REPO/README.md"',
+    'cp "$SELF_DIR/.github/workflows/contracts.yml" "$REPO/.github/workflows/contracts.yml"',
+    'rm -f -- "$REPO/GroupReadWrite.reg" "$REPO/ServerAliveInterval.reg"',
+):
+    if token not in apply:
+        failures.append(f"apply-checkpoint.sh: missing self-contained transformation contract {token}")
+for forbidden in (
+    'git -C "$REPO/sshfs" cat-file',
+    'git -C "$REPO/sshfs" checkout',
+    'git -C "$REPO/sshfs" status',
+    "submodule object store",
+):
+    if forbidden in apply:
+        failures.append(f"apply-checkpoint.sh: still depends on target SSHFS Git metadata: {forbidden}")
 
 wxs = (root / "sshfs-win.wxs").read_text(encoding="utf-8")
 if "WOW6432Node" in wxs:
