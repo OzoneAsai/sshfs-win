@@ -127,7 +127,7 @@ jobs:
           }
 
       - name: Install WinFsp Cygwin FUSE bridge
-        shell: bash
+        shell: bash -o igncr -e -o pipefail {0}
         run: |
           set -euo pipefail
           bridge='/cygdrive/c/Program Files (x86)/WinFsp/opt/cygfuse/install.sh'
@@ -136,7 +136,7 @@ jobs:
           pkg-config --modversion fuse3
 
       - name: Compile Cygwin wrapper and patched SSHFS core
-        shell: bash
+        shell: bash -o igncr -e -o pipefail {0}
         run: |
           set -euo pipefail
           workspace=$(cygpath -u "$GITHUB_WORKSPACE")
