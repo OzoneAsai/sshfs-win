@@ -258,6 +258,7 @@ static int win32_raw_utf8_argv(int *argc_out, char ***argv_out,
 static void normalize_launcher_argv(int *argc, char ***argv)
 {
     int native_argc;
+    int cygwin_argc;
     char **native_argv = 0;
     const char *failure_stage = "none";
     DWORD failure_error = ERROR_SUCCESS;
@@ -266,6 +267,7 @@ static void normalize_launcher_argv(int *argc, char ***argv)
         0 != strcmp((*argv)[1], "svc"))
         return;
 
+    cygwin_argc = *argc;
     if (0 != win32_raw_utf8_argv(&native_argc, &native_argv,
         &failure_stage, &failure_error))
     {
@@ -275,15 +277,19 @@ static void normalize_launcher_argv(int *argc, char ***argv)
         return;
     }
 
-    if (native_argc != *argc)
+    if (native_argc != cygwin_argc)
     {
-        diag("argv.native", "status=count-mismatch native=%d cygwin=%d fallback=cygwin",
-            native_argc, *argc);
-        win32_free_parsed_argv(native_argv);
-        return;
+        diag("argv.native",
+            "status=active count-mismatch native=%d cygwin=%d authority=native encoding=utf8",
+            native_argc, cygwin_argc);
+    }
+    else
+    {
+        diag("argv.native",
+            "status=active argc=%d count=match authority=native encoding=utf8",
+            native_argc);
     }
 
-    diag("argv.native", "status=active argc=%d encoding=utf8", native_argc);
     *argc = native_argc;
     *argv = native_argv;
 }
