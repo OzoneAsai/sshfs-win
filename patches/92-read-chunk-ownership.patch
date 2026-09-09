@@ -1,0 +1,18 @@
+--- a/sshfs.c
++++ b/sshfs.c
+@@ -4262,9 +4262,14 @@
+ 		return -EIO;
+ 	pthread_mutex_lock(&sshfs.lock);
+ 	chunk->modifver = sshfs.modifver;
++	/*
++	 * sshfs_send_read() returns exactly one ownership reference.  Transfer
++	 * that reference into *chunkp; callers that borrow a cached chunk take
++	 * their own reference in search_read_chunk().  Incrementing here leaks
++	 * one reference for every async read submission.
++	 */
+ 	chunk_put(*chunkp);
+ 	*chunkp = chunk;
+-	chunk->refs++;
+ 	pthread_mutex_unlock(&sshfs.lock);
+ 	return 0;
+ }

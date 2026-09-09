@@ -1,0 +1,60 @@
+diff --git a/sshfs.c b/sshfs.c
+index b676d4c..1e82051 100644
+--- a/sshfs.c
++++ b/sshfs.c
+@@ -2133,6 +2133,9 @@ static int sftp_request_send(struct conn *conn, uint8_t type, struct iovec *iov,
+ 	uint32_t id;
+ 	struct request *req = g_new0(struct request, 1);
+ 
++	if (reqp != NULL)
++		*reqp = NULL;
++
+ 	req->want_reply = want_reply;
+ 	req->end_func = end_func;
+ 	req->data = data;
+@@ -2202,12 +2205,14 @@ static int sftp_request_iov(struct conn *conn, uint8_t type, struct iovec *iov,
+ 			    size_t count, uint8_t expect_type, struct buffer *outbuf)
+ {
+ 	int err;
+-	struct request *req;
++	struct request *req = NULL;
+ 
+ 	err = sftp_request_send(conn, type, iov, count, NULL, NULL,
+ 				expect_type, NULL, &req);
+ 	if (expect_type == 0)
+ 		return err;
++	if (req == NULL)
++		return err ? err : -EIO;
+ 
+ 	return sftp_request_wait(req, type, expect_type, outbuf);
+ }
+@@ -2986,7 +2991,7 @@ static int sshfs_open_common(const char *path, mode_t mode,
+ 	struct buffer outbuf;
+ 	struct stat stbuf;
+ 	struct sshfs_file *sf;
+-	struct request *open_req;
++	struct request *open_req = NULL;
+ 	struct conntab_entry *ce;
+ 	uint32_t pflags = 0;
+ 	struct iovec iov;
+@@ -3062,8 +3067,10 @@ static int sshfs_open_common(const char *path, mode_t mode,
+ 	buf_add_uint32(&buf, SSH_FILEXFER_ATTR_PERMISSIONS);
+ 	buf_add_uint32(&buf, mode);
+ 	buf_to_iov(&buf, &iov);
+-	sftp_request_send(sf->conn, SSH_FXP_OPEN, &iov, 1, NULL, NULL, 1, NULL,
+-			  &open_req);
++	err = sftp_request_send(sf->conn, SSH_FXP_OPEN, &iov, 1,
++				NULL, NULL, 1, NULL, &open_req);
++	if (err && open_req == NULL)
++		goto open_done;
+ 	buf_clear(&buf);
+ 	buf_add_path(&buf, path);
+ 	type = sshfs.follow_symlinks ? SSH_FXP_STAT : SSH_FXP_LSTAT;
+@@ -3081,6 +3088,7 @@ static int sshfs_open_common(const char *path, mode_t mode,
+ 		err = err2;
+ 	}
+ 
++open_done:
+ 	if (!err) {
+ 		if (sshfs.dir_cache)
+ 			cache_add_attr(path, &stbuf, wrctr);

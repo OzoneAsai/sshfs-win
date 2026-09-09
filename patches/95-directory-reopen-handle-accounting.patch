@@ -1,0 +1,19 @@
+--- a/sshfs.c
++++ b/sshfs.c
+@@ -3401,8 +3401,15 @@
+ 		return -EIO;
+ 
+ 	if (handle->has_handle) {
++		/*
++		 * Reopen is a handle replacement, not an independent allocation.  Wait
++		 * for CLOSE to complete so reply-side remote-handle accounting retires
++		 * the old handle before OPENDIR admission evaluates handle_limit.
++		 * Without this barrier, handle_limit=1 rejects every rewind with EMFILE.
++		 */
+ 		err = sftp_request_gen(handle->conn, handle->connver, NULL,
+-				       SSH_FXP_CLOSE, &handle->buf, 0, NULL);
++				       SSH_FXP_CLOSE, &handle->buf,
++				       SSH_FXP_STATUS, NULL);
+ 		if (err)
+ 			return err;
+ 		/* free + reset to a clean state so sftp_request can refill it */

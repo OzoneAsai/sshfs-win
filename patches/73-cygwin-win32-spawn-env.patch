@@ -1,0 +1,16 @@
+--- a/sshfs.c	2026-09-08 02:40:54.651787799 +0000
++++ b/sshfs.c	2026-09-08 02:42:25.417140374 +0000
+@@ -4618,6 +4618,13 @@
+ 	int i;
+ 
+ 	signal(SIGPIPE, SIG_IGN);
++#if defined(__CYGWIN__)
++	/* Native Win32 OpenSSH uses inherited file handles for SFTP stdio. */
++	if (setenv("OPENSSH_STDIO_MODE", "nonsock", 1) == -1) {
++		perror("failed to set OPENSSH_STDIO_MODE");
++		return -1;
++	}
++#endif
+ 
+ 	pthread_mutex_init(&sshfs.lock, NULL);
+ 	for (i = 0; i < sshfs.max_conns; i++) {

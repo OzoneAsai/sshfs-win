@@ -1,0 +1,22 @@
+diff --git a/sshfs.c b/sshfs.c
+index 2a9008e..1937581 100644
+--- a/sshfs.c
++++ b/sshfs.c
+@@ -4515,6 +4515,17 @@ static int processing_init(void)
+ 
+ 	signal(SIGPIPE, SIG_IGN);
+ #if defined(__CYGWIN__)
++	/*
++	 * Activate the Cygwin locale for application-level multibyte conversion.
++	 * When no locale variables are supplied Cygwin defaults to C.UTF-8. The
++	 * Win32 argv conversion also has a strict UTF-8 fallback for an explicit
++	 * ASCII C/POSIX locale.
++	 */
++	if (setlocale(LC_CTYPE, "") == NULL) {
++		fprintf(stderr,
++			"warning: failed to initialize text locale; trying UTF-8 fallback for SSH arguments\n");
++	}
++
+ 	/* Native Win32 OpenSSH uses inherited file handles for SFTP stdio. */
+ 	if (setenv("OPENSSH_STDIO_MODE", "nonsock", 1) == -1) {
+ 		perror("failed to set OPENSSH_STDIO_MODE");

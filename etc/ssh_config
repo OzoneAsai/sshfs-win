@@ -1,0 +1,9 @@
+# SSHFS-Win system defaults.
+#
+# OpenSSH reads per-user ~/.ssh/config before this system configuration,
+# so users can override these defaults per host.
+Host *
+    StrictHostKeyChecking accept-new
+    ServerAliveInterval 15
+    ServerAliveCountMax 3
+    ConnectTimeout 15

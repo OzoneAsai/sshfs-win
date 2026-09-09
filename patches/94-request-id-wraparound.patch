@@ -1,0 +1,45 @@
+--- a/sshfs.c
++++ b/sshfs.c
+@@ -1984,6 +1984,29 @@
+ 	return idctr++;
+ }
+ 
++/*
++ * Allocate an ID for a request that will enter reqtab. Caller holds
++ * sshfs.lock, so the lookup and the later insertion are one allocation
++ * transaction. The wire ID is only 32 bits; after wraparound we must skip
++ * IDs that are still owned by in-flight requests instead of replacing their
++ * hash-table entries.
++ */
++static int sftp_get_request_id_locked(uint32_t *idp)
++{
++	uint32_t first;
++	uint32_t id;
++
++	first = sftp_get_id();
++	id = first;
++	while (g_hash_table_lookup(sshfs.reqtab, GUINT_TO_POINTER(id)) != NULL) {
++		id = sftp_get_id();
++		if (id == first)
++			return -EAGAIN;
++	}
++	*idp = id;
++	return 0;
++}
++
+ static void buf_to_iov(const struct buffer *buf, struct iovec *iov)
+ {
+ 	iov->iov_base = buf->p;
+@@ -2896,7 +2919,11 @@
+ 	req->end_func = end_func;
+ 	if (begin_func)
+ 		begin_func(req);
+-	id = sftp_get_id();
++	err = sftp_get_request_id_locked(&id);
++	if (err) {
++		pthread_mutex_unlock(&sshfs.lock);
++		goto out;
++	}
+ 	req->id = id;
+ 	err = start_processing_thread(conn);
+ 	if (err) {

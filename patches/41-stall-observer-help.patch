@@ -1,0 +1,10 @@
+--- a/sshfs.c
++++ b/sshfs.c
+@@ -4080,6 +4080,7 @@
+ "    -1                     equivalent to '-o ssh_protocol=1'\n"
+ "    -o opt,[opt...]        mount options\n"
+ "    -o reconnect           reconnect to server\n"
++"    -o stall_warn=N        report requests older than N seconds (no termination)\n"
+ "    -o delay_connect       delay connection to server\n"
+ "    -o sshfs_sync          synchronous writes\n"
+ "    -o no_readahead        synchronous reads (no speculative readahead)\n"

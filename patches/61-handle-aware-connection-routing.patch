@@ -1,0 +1,44 @@
+diff --git a/sshfs.c b/sshfs.c
+index bad51cd..e64a348 100644
+--- a/sshfs.c
++++ b/sshfs.c
+@@ -1180,17 +1180,39 @@ static struct conn* get_conn(const struct sshfs_file *sf,
+ 	}
+ 
+ 	int best_index = 0;
++	int capacity_index = -1;
+ 	uint64_t best_score = ~0ULL; /* smaller is better */
++	uint64_t capacity_score = ~0ULL;
++	uint64_t capacity_pressure = ~0ULL;
+ 	for (i = 0; i < sshfs.max_conns; i++) {
+ 		uint64_t score = ((uint64_t) sshfs.conns[i].req_count << 43) +
+ 				 ((uint64_t) sshfs.conns[i].dir_count << 22) +
+ 				 ((uint64_t) sshfs.conns[i].file_count << 1) +
+ 				 (uint64_t) (sshfs.conns[i].rfd >= 0 ? 0 : 1);
++		uint64_t pressure = sshfs.conns[i].remote_handles +
++				    sshfs.conns[i].remote_handle_reservations;
++
+ 		if (score < best_score) {
+ 			best_index = i;
+ 			best_score = score;
+ 		}
++
++		/*
++		 * When explicit handle admission control is enabled, prefer a
++		 * connection that still has server-handle capacity. The admission
++		 * reservation under sshfs.lock remains authoritative; this selection
++		 * is only a best-effort routing hint and cannot bypass the cap.
++		 */
++		if (sshfs.handle_limit != 0 && pressure < sshfs.handle_limit &&
++		    (capacity_index == -1 || pressure < capacity_pressure ||
++		     (pressure == capacity_pressure && score < capacity_score))) {
++			capacity_index = i;
++			capacity_pressure = pressure;
++			capacity_score = score;
++		}
+ 	}
++	if (capacity_index != -1)
++		return &sshfs.conns[capacity_index];
+ 	return &sshfs.conns[best_index];
+ }
+ 

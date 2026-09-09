@@ -1,0 +1,82 @@
+diff --git a/sshfs.c b/sshfs.c
+index 865ffa2..d52d0e5 100644
+--- a/sshfs.c
++++ b/sshfs.c
+@@ -214,6 +214,7 @@
+ 
+ struct conn {
+ 	pthread_mutex_t lock_write;
++	pthread_mutex_t transport_lock;
+ 	int processing_thread_started;
+ 	int rfd;
+ 	int wfd;
+@@ -1890,6 +1891,8 @@ static void *process_requests(void *data_)
+ 			break;
+ 	}
+ 
++	/* Lock order when both are needed: transport_lock -> sshfs.lock. */
++	pthread_mutex_lock(&conn->transport_lock);
+ 	pthread_mutex_lock(&sshfs.lock);
+ 	conn->processing_thread_started = 0;
+ 	close_conn(conn);
+@@ -1899,6 +1902,7 @@ static void *process_requests(void *data_)
+ 	conn->remote_handle_reservations = 0;
+ 	pthread_cond_broadcast(&sshfs.outstanding_cond);
+ 	pthread_mutex_unlock(&sshfs.lock);
++	pthread_mutex_unlock(&conn->transport_lock);
+ 
+ 	if (!sshfs.reconnect) {
+ 		/* harakiri */
+@@ -2388,6 +2392,24 @@ static int sftp_request_send_gen(struct conn *conn, int expected_connver,
+ 	}
+ 	sshfs.outstanding_len += req->len;
+ 	req->outstanding_accounted = 1;
++	pthread_mutex_unlock(&sshfs.lock);
++
++	/*
++	 * Pin the transport between the final generation check and the physical
++	 * wire write. Teardown takes this mutex before closing/replacing the
++	 * connection, so an opaque handle can never cross into a later session.
++	 * Do not hold sshfs.lock while waiting for transport_lock: a blocked SSH
++	 * write must not stop reply processing or teardown bookkeeping.
++	 */
++	pthread_mutex_lock(&conn->transport_lock);
++	pthread_mutex_lock(&sshfs.lock);
++	if (req->connver != conn->connver || conn->rfd == -1 || conn->wfd == -1) {
++		err = -EIO;
++		request_release_outstanding_locked(req);
++		pthread_mutex_unlock(&sshfs.lock);
++		pthread_mutex_unlock(&conn->transport_lock);
++		goto out;
++	}
+ 
+ 	if (sshfs.stall_warn != 0 &&
+ 	    clock_gettime(CLOCK_MONOTONIC, &req->health_start) == -1) {
+@@ -2405,6 +2427,7 @@ static int sftp_request_send_gen(struct conn *conn, int expected_connver,
+ 
+ 	err = -EIO;
+ 	if (sftp_send_iov(conn, type, id, iov, count) == -1) {
++		pthread_mutex_unlock(&conn->transport_lock);
+ 		gboolean rmed;
+ 
+ 		pthread_mutex_lock(&sshfs.lock);
+@@ -2419,6 +2442,7 @@ static int sftp_request_send_gen(struct conn *conn, int expected_connver,
+ 		}
+ 		goto out;
+ 	}
++	pthread_mutex_unlock(&conn->transport_lock);
+ 	if (want_reply)
+ 		*reqp = req;
+ 	return 0;
+@@ -4317,8 +4341,10 @@ static int processing_init(void)
+ 	signal(SIGPIPE, SIG_IGN);
+ 
+ 	pthread_mutex_init(&sshfs.lock, NULL);
+-	for (i = 0; i < sshfs.max_conns; i++)
++	for (i = 0; i < sshfs.max_conns; i++) {
+ 		pthread_mutex_init(&sshfs.conns[i].lock_write, NULL);
++		pthread_mutex_init(&sshfs.conns[i].transport_lock, NULL);
++	}
+ 	pthread_cond_init(&sshfs.outstanding_cond, NULL);
+ 	sshfs.reqtab = g_hash_table_new(NULL, NULL);
+ 	if (!sshfs.reqtab) {

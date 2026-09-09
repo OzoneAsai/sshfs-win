@@ -1,0 +1,91 @@
+--- a/sshfs.c
++++ b/sshfs.c
+@@ -4682,41 +4682,22 @@
+ 	return err;
+ }
+ 
+-static void sshfs_sync_write_begin(struct request *req)
+-{
+-	struct sshfs_io *sio = (struct sshfs_io *) req->data;
+-	sio->num_reqs++;
+-}
+-
+-static void sshfs_sync_write_end(struct request *req)
+-{
+-	int err;
+-	struct sshfs_io *sio = (struct sshfs_io *) req->data;
+-
+-	err = sshfs_write_reply_error(req);
+-	if (err)
+-		sio->error = err;
+-	sio->num_reqs--;
+-	if (!sio->num_reqs)
+-		pthread_cond_broadcast(&sio->finished);
+-}
+-
+-
+ static int sshfs_sync_write(struct sshfs_file *sf, const char *wbuf,
+ 			    size_t size, off_t offset)
+ {
+-	int err = 0;
+ 	struct buffer *handle = &sf->handle;
+-	struct sshfs_io sio = { .error = 0, .num_reqs = 0 };
+-
+-	err = pthread_cond_init(&sio.finished, NULL);
+-	if (err != 0) {
+-		fprintf(stderr, "failed to initialize sync-write condition: %s\n",
+-			strerror(err));
+-		return -err;
+-	}
++	size_t written = 0;
+ 
+-	while (!err && size) {
++	/*
++	 * Safe writes are remote commit barriers, not merely synchronous local
++	 * submissions.  Wait for each SFTP WRITE STATUS before sending the next
++	 * chunk.  If a later chunk fails, report the already committed prefix as a
++	 * short write and never put later chunks on the wire.  This is required for
++	 * O_APPEND in particular: retrying an all-or-error multi-chunk write after
++	 * an earlier chunk committed would otherwise append the prefix twice.
++	 */
++	while (size) {
++		int err;
+ 		struct buffer buf;
+ 		struct iovec iov[2];
+ 		size_t bsize = size < sshfs.max_write ? size : sshfs.max_write;
+@@ -4728,27 +4709,20 @@
+ 		buf_to_iov(&buf, &iov[0]);
+ 		iov[1].iov_base = (void *) wbuf;
+ 		iov[1].iov_len = bsize;
+-		err = sftp_request_send_gen(sf->conn, sf->connver, NULL,
+-					    SSH_FXP_WRITE, iov, 2,
+-					    sshfs_sync_write_begin,
+-					    sshfs_sync_write_end,
+-					    0, &sio, NULL);
++		err = sftp_request_iov_gen(sf->conn, sf->connver, NULL,
++					   SSH_FXP_WRITE, iov, 2,
++					   SSH_FXP_STATUS, NULL);
+ 		buf_free(&buf);
++		if (err)
++			return written ? (int) written : err;
++
++		written += bsize;
+ 		size -= bsize;
+ 		wbuf += bsize;
+ 		offset += bsize;
+ 	}
+ 
+-	pthread_mutex_lock(&sshfs.lock);
+-	while (sio.num_reqs)
+-	       pthread_cond_wait(&sio.finished, &sshfs.lock);
+-	pthread_mutex_unlock(&sshfs.lock);
+-
+-	if (!err)
+-		err = sio.error;
+-
+-	pthread_cond_destroy(&sio.finished);
+-	return err;
++	return (int) written;
+ }
+ 
+ static int sshfs_write(const char *path, const char *wbuf, size_t size,

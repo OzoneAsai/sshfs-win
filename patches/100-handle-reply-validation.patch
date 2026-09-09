@@ -1,0 +1,48 @@
+--- a/sshfs.c
++++ b/sshfs.c
+@@ -2181,6 +2181,23 @@
+ };
+ 
+ /*
++ * SSH_FXP_HANDLE contains exactly one SFTP string after the request id. Type
++ * correctness alone is not enough: reject a truncated length field, payload
++ * length mismatch or trailing garbage before accepting the handle.
++ */
++static int sftp_handle_reply_valid(const struct buffer *reply)
++{
++	struct buffer copy = *reply;
++	uint32_t handle_len;
++
++	if (copy.len > copy.size ||
++	    buf_get_uint32(&copy, &handle_len) == -1 ||
++	    handle_len != copy.size - copy.len)
++		return 0;
++	return 1;
++}
++
++/*
+  * Account SFTP handle replies while sshfs.lock is held. request_type is the
+  * original SFTP opcode, so asynchronous CLOSE requests are covered too.
+  * No logging is performed under sshfs.lock; a snapshot is returned to the
+@@ -2198,7 +2215,8 @@
+ 	if (req->request_type == SSH_FXP_OPEN ||
+ 	    req->request_type == SSH_FXP_OPENDIR) {
+ 		remote_handle_release_reservation_locked(req);
+-		creates_handle = reply_type == SSH_FXP_HANDLE;
++		creates_handle = reply_type == SSH_FXP_HANDLE &&
++			sftp_handle_reply_valid(reply);
+ 	} else if (req->request_type == SSH_FXP_CLOSE) {
+ 		struct buffer status_reply = *reply;
+ 		uint32_t status;
+@@ -2929,6 +2947,11 @@
+ 			err = -sftp_error_to_errno(serr);
+ 		}
+ 	} else {
++		if (expect_type == SSH_FXP_HANDLE &&
++		    !sftp_handle_reply_valid(&req->reply)) {
++			fprintf(stderr, "protocol error: malformed HANDLE reply\n");
++			goto out;
++		}
+ 		buf_init(outbuf, req->reply.size - req->reply.len);
+ 		buf_get_mem(&req->reply, outbuf->p, outbuf->size);
+ 		err = 0;

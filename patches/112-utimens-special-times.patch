@@ -1,0 +1,86 @@
+--- a/sshfs.c
++++ b/sshfs.c
+@@ -4023,6 +4023,8 @@
+ 
+ static int sshfs_truncate_workaround(const char *path, off_t size,
+                                      struct fuse_file_info *fi);
++static int sshfs_getattr(const char *path, struct stat *stbuf,
++                         struct fuse_file_info *fi);
+ 
+ static void sshfs_inc_modifver(void)
+ {
+@@ -4034,18 +4036,28 @@
+ static int sshfs_utimens(const char *path, const struct timespec tv[2],
+ 			 struct fuse_file_info *fi)
+ {
+-	(void) fi;
+ 	int err;
++	int omit_atime = tv != NULL && tv[0].tv_nsec == UTIME_OMIT;
++	int omit_mtime = tv != NULL && tv[1].tv_nsec == UTIME_OMIT;
++	int now_atime = tv == NULL || tv[0].tv_nsec == UTIME_NOW;
++	int now_mtime = tv == NULL || tv[1].tv_nsec == UTIME_NOW;
+ 	struct buffer buf;
+ 	struct sshfs_file *sf = NULL;
+-	time_t asec = tv[0].tv_sec, msec = tv[1].tv_sec;
+-
+-	struct timeval now;
+-	gettimeofday(&now, NULL);
+-	if (asec == 0)
+-		asec = now.tv_sec;
+-	if (msec == 0)
+-		msec = now.tv_sec;
++	struct stat current;
++	struct timespec now;
++	time_t asec;
++	time_t msec;
++
++	if (omit_atime && omit_mtime)
++		return 0;
++	if (tv != NULL) {
++		if (!omit_atime && !now_atime &&
++		    (tv[0].tv_nsec < 0 || tv[0].tv_nsec >= 1000000000L))
++			return -EINVAL;
++		if (!omit_mtime && !now_mtime &&
++		    (tv[1].tv_nsec < 0 || tv[1].tv_nsec >= 1000000000L))
++			return -EINVAL;
++	}
+ 
+ 	if (fi != NULL) {
+ 		sf = get_sshfs_file(fi);
+@@ -4053,14 +4065,34 @@
+ 			return -EIO;
+ 	}
+ 
++	if (omit_atime || omit_mtime) {
++		err = sshfs_getattr(path, &current, fi);
++		if (err)
++			return err;
++	}
++	if (now_atime || now_mtime) {
++		if (clock_gettime(CLOCK_REALTIME, &now) == -1)
++			return -errno;
++	}
++
++	asec = omit_atime ? current.st_atime :
++		(now_atime ? now.tv_sec : tv[0].tv_sec);
++	msec = omit_mtime ? current.st_mtime :
++		(now_mtime ? now.tv_sec : tv[1].tv_sec);
++
++	/* SFTP v3 ACMODTIME fields are unsigned 32-bit seconds. */
++	if (asec < 0 || msec < 0 ||
++	    (uintmax_t) asec > UINT32_MAX || (uintmax_t) msec > UINT32_MAX)
++		return -ERANGE;
++
+ 	buf_init(&buf, 0);
+ 	if (sf == NULL)
+ 		buf_add_path(&buf, path);
+ 	else
+ 		buf_add_buf(&buf, &sf->handle);
+ 	buf_add_uint32(&buf, SSH_FILEXFER_ATTR_ACMODTIME);
+-	buf_add_uint32(&buf, asec);
+-	buf_add_uint32(&buf, msec);
++	buf_add_uint32(&buf, (uint32_t) asec);
++	buf_add_uint32(&buf, (uint32_t) msec);
+ 
+ 	if (sf == NULL)
+ 		err = sftp_request(get_conn(NULL, path), SSH_FXP_SETSTAT,

@@ -1,0 +1,77 @@
+--- a/sshfs.c
++++ b/sshfs.c
+@@ -1865,20 +1865,19 @@
+ 	return 0;
+ }
+ 
+-static int connect_to(struct conn *conn, char *host, char *port)
++static int connect_to(struct conn *conn, const char *host, const char *port)
+ {
+ 	int err;
+-	int sock;
++	int last_errno = 0;
++	int sock = -1;
+ 	int opt;
+ 	struct addrinfo *ai;
++	struct addrinfo *candidate;
+ 	struct addrinfo hint;
+ 
+ 	memset(&hint, 0, sizeof(hint));
+-	hint.ai_family = PF_INET;
+-	if (strstr(host, ":") != NULL) { // only ipv6 should have : in it, normal IP and domains do not.
+-		hint.ai_family = PF_INET6;
+-		DEBUG("using ipv6 to connect to host %s\n", host);
+-	}
++	/* Let getaddrinfo provide the ordered IPv4/IPv6 candidate set. */
++	hint.ai_family = AF_UNSPEC;
+ 	hint.ai_socktype = SOCK_STREAM;
+ 	err = getaddrinfo(host, port, &hint, &ai);
+ 	if (err) {
+@@ -1886,26 +1885,35 @@
+ 			gai_strerror(err));
+ 		return -1;
+ 	}
+-	sock = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
+-	if (sock == -1) {
+-		perror("failed to create socket");
+-		freeaddrinfo(ai);
+-		return -1;
+-	}
+-	err = connect(sock, ai->ai_addr, ai->ai_addrlen);
+-	if (err == -1) {
+-		perror("failed to connect");
+-		freeaddrinfo(ai);
++
++	for (candidate = ai; candidate != NULL; candidate = candidate->ai_next) {
++		sock = socket(candidate->ai_family, candidate->ai_socktype,
++			      candidate->ai_protocol);
++		if (sock == -1) {
++			last_errno = errno;
++			continue;
++		}
++		if (connect(sock, candidate->ai_addr, candidate->ai_addrlen) == 0)
++			break;
++
++		last_errno = errno;
+ 		close(sock);
++		sock = -1;
++	}
++	freeaddrinfo(ai);
++
++	if (sock == -1) {
++		if (last_errno != 0)
++			errno = last_errno;
++		perror("failed to connect to any resolved address");
+ 		return -1;
+ 	}
++
+ 	opt = 1;
+ 	err = setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, &opt, sizeof(opt));
+ 	if (err == -1)
+ 		perror("warning: failed to set TCP_NODELAY");
+ 
+-	freeaddrinfo(ai);
+-
+ 	conn->rfd = sock;
+ 	conn->wfd = sock;
+ 	return 0;

@@ -1,0 +1,12 @@
+--- a/sshfs.c
++++ b/sshfs.c
+@@ -4093,7 +4093,8 @@
+ 	buf_clear(&buf);
+ 	buf_add_path(&buf, path);
+ 	type = sshfs.follow_symlinks ? SSH_FXP_STAT : SSH_FXP_LSTAT;
+-	err2 = sftp_request(sf->conn, type, &buf, SSH_FXP_ATTRS, &outbuf);
++	err2 = sftp_request_gen(sf->conn, sf->connver, NULL, type, &buf,
++				SSH_FXP_ATTRS, &outbuf);
+ 	if (!err2) {
+ 		err2 = buf_get_attrs(&outbuf, &stbuf, NULL);
+ 		buf_free(&outbuf);

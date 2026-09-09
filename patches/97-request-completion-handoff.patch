@@ -1,0 +1,86 @@
+--- a/sshfs.c
++++ b/sshfs.c
+@@ -340,6 +340,13 @@
+ 	int outstanding_accounted;
+ 	int remote_handle_reserved;
+ 	int remote_handle_reservation_connver;
++	/*
++	 * True once this request has been published in reqtab and a reply/teardown
++	 * path therefore owns the completion handoff. A waiter must consume that
++	 * handoff before freeing the request even if a local send error is already
++	 * visible.
++	 */
++	int completion_expected;
+ };
+ 
+ static void remote_handle_release_reservation_locked(struct request *req);
+@@ -2822,13 +2829,24 @@
+                              uint8_t expect_type, struct buffer *outbuf)
+ {
+ 	int err;
++	int completion_expected;
+ 
+-	err = request_error_snapshot(req);
+-	if (err)
++	/*
++	 * A local setup failure happens before reqtab publication and therefore has
++	 * no completion handoff to wait for. Once published, however, the processing
++	 * or teardown path may already have removed the request and still be using
++	 * it. In that state an error is not permission to free early: consume the
++	 * ready handoff first.
++	 */
++	pthread_mutex_lock(&sshfs.lock);
++	err = req->error;
++	completion_expected = req->completion_expected;
++	pthread_mutex_unlock(&sshfs.lock);
++	if (completion_expected)
++		request_ready_wait(&req->ready);
++	else if (err)
+ 		goto out;
+ 
+-	request_ready_wait(&req->ready);
+-
+ 	err = request_error_snapshot(req);
+ 	if (err)
+ 		goto out;
+@@ -2978,6 +2996,8 @@
+ 		req->health_start.tv_sec = 0;
+ 		req->health_start.tv_nsec = 0;
+ 	}
++	/* reqtab publication transfers completion ownership to reply/teardown. */
++	req->completion_expected = want_reply != 0;
+ 	g_hash_table_insert(sshfs.reqtab, GUINT_TO_POINTER(id), req);
+ 	if (sshfs.debug) {
+ 		gettimeofday(&req->start, NULL);
+@@ -2994,8 +3014,11 @@
+ 
+ 		pthread_mutex_lock(&sshfs.lock);
+ 		rmed = g_hash_table_remove(sshfs.reqtab, GUINT_TO_POINTER(id));
+-		if (rmed)
++		if (rmed) {
+ 			request_release_outstanding_locked(req);
++			/* We reclaimed it before reply/teardown could own completion. */
++			req->completion_expected = 0;
++		}
+ 		pthread_mutex_unlock(&sshfs.lock);
+ 
+ 		if (!rmed && !want_reply) {
+@@ -3259,9 +3282,18 @@
+ 		int tmperr;
+ 
+ 		while (!done && outstanding < max) {
++			req = NULL;
+ 			tmperr = sftp_readdir_send(conn, connver, &req, handle);
+ 
+ 			if (tmperr && !done) {
++				/*
++				 * send_gen may return an errored request that still owns a
++				 * completion handoff. Consume/free it instead of leaking the
++				 * request, semaphore and conn->req_count ownership.
++				 */
++				if (req != NULL)
++					(void) sftp_request_wait(req, SSH_FXP_READDIR,
++							 SSH_FXP_NAME, &name);
+ 				err = tmperr;
+ 				done = 1;
+ 				break;

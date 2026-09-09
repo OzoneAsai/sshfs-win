@@ -1,0 +1,12 @@
+--- a/sshfs.c
++++ b/sshfs.c
+@@ -3799,7 +3799,8 @@
+ 	if (err == -EPERM && sshfs.renamexdev_workaround)
+ 		err = -EXDEV;
+ 
+-	if (!err && sshfs.max_conns > 1) {
++	if (!err && sshfs.max_conns > 1 && strcmp(from, to) != 0) {
++		/* rename(path, path) is a remote no-op; preserve local affinity. */
+ 		pthread_mutex_lock(&sshfs.lock);
+ 		ce = g_hash_table_lookup(sshfs.conntab, from);
+ 		if (ce != NULL) {

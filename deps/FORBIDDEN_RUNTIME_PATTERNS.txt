@@ -1,0 +1,7 @@
+# One shell glob per line. Matching packaged runtime files fail the audit.
+cygssl-1.0*.dll
+cygssl-1.1*.dll
+cygcrypto-1.0*.dll
+cygcrypto-1.1*.dll
+libeay32.dll
+ssleay32.dll

@@ -1,0 +1,82 @@
+diff --git a/sshfs.c b/sshfs.c
+index f48fe8a..2a9008e 100644
+--- a/sshfs.c
++++ b/sshfs.c
+@@ -47,6 +47,7 @@
+ #  include <windows.h>
+ #  include <sys/cygwin.h>
+ #  include <io.h>
++#  include <locale.h>
+ #  include <wchar.h>
+ #endif
+ #ifdef __APPLE__
+@@ -1261,6 +1262,50 @@ static void replace_arg(char **argp, const char *newarg)
+ }
+ 
+ #if defined(__CYGWIN__)
++static wchar_t *win32_widen_arg(const char *arg)
++{
++	mbstate_t state;
++	const char *src;
++	size_t need;
++	wchar_t *wide;
++	int utf8_need;
++
++	/* Respect an explicitly selected Cygwin multibyte locale first. */
++	memset(&state, 0, sizeof(state));
++	src = arg;
++	need = mbsrtowcs(NULL, &src, 0, &state);
++	if (need != (size_t) -1) {
++		wide = malloc((need + 1) * sizeof(*wide));
++		if (wide == NULL)
++			return NULL;
++		memset(&state, 0, sizeof(state));
++		src = arg;
++		if (mbsrtowcs(wide, &src, need + 1, &state) != (size_t) -1)
++			return wide;
++		free(wide);
++	}
++
++	/*
++	 * Cygwin uses UTF-8 internally for Windows filename conversion even for
++	 * ASCII C/POSIX locales. A caller may therefore carry UTF-8 argv bytes
++	 * that the C locale cannot decode. Fall back to strict UTF-8 rather than
++	 * silently replacing characters.
++	 */
++	utf8_need = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS,
++		arg, -1, NULL, 0);
++	if (utf8_need <= 0)
++		return NULL;
++	wide = malloc((size_t) utf8_need * sizeof(*wide));
++	if (wide == NULL)
++		return NULL;
++	if (0 == MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS,
++		arg, -1, wide, utf8_need)) {
++		free(wide);
++		return NULL;
++	}
++	return wide;
++}
++
+ static int win32_quote_warg(const wchar_t *arg, wchar_t **outp)
+ {
+ 	size_t i, n = wcslen(arg), outlen = 2; /* surrounding quotes */
+@@ -1326,17 +1371,9 @@ static wchar_t *win32_command_line(char *const argv[], int argc)
+ 	if (quoted == NULL)
+ 		return NULL;
+ 	for (i = 0; i < argc; i++) {
+-		size_t need = mbstowcs(NULL, argv[i], 0);
+-		wchar_t *wide;
+-		if (need == (size_t) -1)
+-			goto out;
+-		wide = malloc((need + 1) * sizeof(*wide));
++		wchar_t *wide = win32_widen_arg(argv[i]);
+ 		if (wide == NULL)
+ 			goto out;
+-		if (mbstowcs(wide, argv[i], need + 1) == (size_t) -1) {
+-			free(wide);
+-			goto out;
+-		}
+ 		if (win32_quote_warg(wide, &quoted[i]) == -1) {
+ 			free(wide);
+ 			goto out;

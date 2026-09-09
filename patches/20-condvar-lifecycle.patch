@@ -1,0 +1,127 @@
+--- a/sshfs.c
++++ b/sshfs.c
+@@ -1515,6 +1515,7 @@
+ 		buf_free(&rreq->data);
+ 		g_free(rreq);
+ 	}
++	pthread_cond_destroy(&chunk->sio.finished);
+ 	g_free(chunk);
+ }
+ 
+@@ -2969,7 +2970,13 @@
+ 
+ 	sf = g_new0(struct sshfs_file, 1);
+ 	list_init(&sf->write_reqs);
+-	pthread_cond_init(&sf->write_finished, NULL);
++	err = pthread_cond_init(&sf->write_finished, NULL);
++	if (err != 0) {
++		fprintf(stderr, "failed to initialize file write condition: %s\n",
++			strerror(err));
++		g_free(sf);
++		return -err;
++	}
+ 	/* Assume random read after open */
+ 	sf->is_seq = 0;
+ 	sf->next_pos = 0;
+@@ -3039,6 +3046,7 @@
+ 			}
+ 			pthread_mutex_unlock(&sshfs.lock);
+ 		}
++		pthread_cond_destroy(&sf->write_finished);
+ 		g_free(sf);
+ 	}
+ 	buf_free(&buf);
+@@ -3124,6 +3132,7 @@
+ 		}
+ 		pthread_mutex_unlock(&sshfs.lock);
+ 	}
++	pthread_cond_destroy(&sf->write_finished);
+ 	g_free(sf);
+ 	return 0;
+ }
+@@ -3179,7 +3188,13 @@
+ 	struct read_chunk *chunk = g_new0(struct read_chunk, 1);
+ 	struct buffer *handle = &sf->handle;
+ 
+-	pthread_cond_init(&chunk->sio.finished, NULL);
++	int cond_err = pthread_cond_init(&chunk->sio.finished, NULL);
++	if (cond_err != 0) {
++		fprintf(stderr, "failed to initialize read condition: %s\n",
++			strerror(cond_err));
++		g_free(chunk);
++		return NULL;
++	}
+ 	list_init(&chunk->reqs);
+ 	chunk->size = size;
+ 	chunk->offset = offset;
+@@ -3283,21 +3298,26 @@
+ 	struct read_chunk *chunk;
+ 
+ 	chunk = sshfs_send_read(sf, size, offset);
++	if (!chunk)
++		return -EIO;
+ 	return wait_chunk(chunk, buf, size);
+ }
+ 
+-static void submit_read(struct sshfs_file *sf, size_t size, off_t offset,
+-                        struct read_chunk **chunkp)
++static int submit_read(struct sshfs_file *sf, size_t size, off_t offset,
++                       struct read_chunk **chunkp)
+ {
+ 	struct read_chunk *chunk;
+ 
+ 	chunk = sshfs_send_read(sf, size, offset);
++	if (!chunk)
++		return -EIO;
+ 	pthread_mutex_lock(&sshfs.lock);
+ 	chunk->modifver = sshfs.modifver;
+ 	chunk_put(*chunkp);
+ 	*chunkp = chunk;
+ 	chunk->refs++;
+ 	pthread_mutex_unlock(&sshfs.lock);
++	return 0;
+ }
+ 
+ static struct read_chunk *search_read_chunk(struct sshfs_file *sf, off_t offset)
+@@ -3335,11 +3355,16 @@
+ 		chunk = NULL;
+ 	}
+ 
+-	if (!chunk)
+-		submit_read(sf, size, offset, &chunk);
++	if (!chunk) {
++		res = submit_read(sf, size, offset, &chunk);
++		if (res) {
++			chunk_put_locked(chunk_prev);
++			return res;
++		}
++	}
+ 
+ 	if (curr_is_seq && chunk && chunk->size <= size)
+-		submit_read(sf, origsize, offset + size, &sf->readahead);
++		(void) submit_read(sf, origsize, offset + size, &sf->readahead);
+ 
+ 	if (chunk_prev) {
+ 		size_t prev_size = chunk_prev->size;
+@@ -3464,7 +3489,12 @@
+ 	struct buffer *handle = &sf->handle;
+ 	struct sshfs_io sio = { .error = 0, .num_reqs = 0 };
+ 
+-	pthread_cond_init(&sio.finished, NULL);
++	err = pthread_cond_init(&sio.finished, NULL);
++	if (err != 0) {
++		fprintf(stderr, "failed to initialize sync-write condition: %s\n",
++			strerror(err));
++		return -err;
++	}
+ 
+ 	while (!err && size) {
+ 		struct buffer buf;
+@@ -3496,6 +3526,7 @@
+ 	if (!err)
+ 		err = sio.error;
+ 
++	pthread_cond_destroy(&sio.finished);
+ 	return err;
+ }
+ 

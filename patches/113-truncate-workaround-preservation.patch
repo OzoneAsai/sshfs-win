@@ -1,0 +1,136 @@
+--- a/sshfs.c
++++ b/sshfs.c
+@@ -4950,29 +4950,40 @@
+ static int sshfs_truncate_zero(const char *path)
+ {
+ 	int err;
++	int release_err;
+ 	struct fuse_file_info fi;
+ 
+ 	fi.flags = O_WRONLY | O_TRUNC;
+ 	err = sshfs_open(path, &fi);
+-	if (!err)
+-		sshfs_release(path, &fi);
++	if (!err) {
++		release_err = sshfs_release(path, &fi);
++		if (release_err)
++			err = release_err;
++	}
+ 
+ 	return err;
+ }
+ 
+ static size_t calc_buf_size(off_t size, off_t offset)
+ {
+-	return offset + sshfs.max_read < size ? sshfs.max_read : size - offset;
++	off_t remaining = size - offset;
++
++	return remaining < (off_t) sshfs.max_read ? (size_t) remaining :
++		sshfs.max_read;
+ }
+ 
+ static int sshfs_truncate_shrink(const char *path, off_t size)
+ {
+ 	int res;
++	int release_err;
+ 	char *data;
+ 	off_t offset;
+ 	struct fuse_file_info fi;
+ 
+-	data = calloc(size, 1);
++	if ((uintmax_t) size > SIZE_MAX)
++		return -EOVERFLOW;
++
++	data = malloc((size_t) size);
+ 	if (!data)
+ 		return -ENOMEM;
+ 
+@@ -4981,30 +4992,48 @@
+ 	if (res)
+ 		goto out;
+ 
+-	for (offset = 0; offset < size; offset += res) {
++	for (offset = 0; offset < size;) {
+ 		size_t bufsize = calc_buf_size(size, offset);
+-		res = sshfs_read(path, data + offset, bufsize, offset, &fi);
+-		if (res <= 0)
++		res = sshfs_read(path, data + (size_t) offset, bufsize, offset, &fi);
++		if (res < 0)
++			break;
++		if (res == 0) {
++			res = -EIO;
+ 			break;
++		}
++		offset += res;
+ 	}
+-	sshfs_release(path, &fi);
++	release_err = sshfs_release(path, &fi);
++	if (res >= 0 && release_err)
++		res = release_err;
+ 	if (res < 0)
+ 		goto out;
++	if (offset != size) {
++		res = -EIO;
++		goto out;
++	}
+ 
+ 	fi.flags = O_WRONLY | O_TRUNC;
+ 	res = sshfs_open(path, &fi);
+ 	if (res)
+ 		goto out;
+ 
+-	for (offset = 0; offset < size; offset += res) {
++	for (offset = 0; offset < size;) {
+ 		size_t bufsize = calc_buf_size(size, offset);
+-		res = sshfs_write(path, data + offset, bufsize, offset, &fi);
++		res = sshfs_write(path, data + (size_t) offset, bufsize, offset, &fi);
+ 		if (res < 0)
+ 			break;
++		if (res == 0) {
++			res = -EIO;
++			break;
++		}
++		offset += res;
+ 	}
+ 	if (res >= 0)
+ 		res = sshfs_flush(path, &fi);
+-	sshfs_release(path, &fi);
++	release_err = sshfs_release(path, &fi);
++	if (res >= 0 && release_err)
++		res = release_err;
+ 
+ out:
+ 	free(data);
+@@ -5015,6 +5044,7 @@
+                                  struct fuse_file_info *fi)
+ {
+ 	int res;
++	int release_err = 0;
+ 	char c = 0;
+ 	struct fuse_file_info tmpfi;
+ 	struct fuse_file_info *openfi = fi;
+@@ -5028,8 +5058,13 @@
+ 	res = sshfs_write(path, &c, 1, size - 1, openfi);
+ 	if (res == 1)
+ 		res = sshfs_flush(path, openfi);
+-	if (!fi)
+-		sshfs_release(path, openfi);
++	else if (res >= 0)
++		res = -EIO;
++	if (!fi) {
++		release_err = sshfs_release(path, openfi);
++		if (res >= 0 && release_err)
++			res = release_err;
++	}
+ 
+ 	return res;
+ }
+@@ -5049,6 +5084,8 @@
+ static int sshfs_truncate_workaround(const char *path, off_t size,
+                                      struct fuse_file_info *fi)
+ {
++	if (size < 0)
++		return -EINVAL;
+ 	if (size == 0)
+ 		return sshfs_truncate_zero(path);
+ 	else {

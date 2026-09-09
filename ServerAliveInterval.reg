@@ -1,4 +1,5 @@
-﻿Windows Registry Editor Version 5.00
+Windows Registry Editor Version 5.00
+; WinFsp Launcher services are in the 32-bit registry view on x64 Windows.
 
 [HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\WinFsp\Services\sshfs]
 "CommandLine"="svc %1 %2 %U -o ServerAliveInterval=30"

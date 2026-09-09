@@ -1,0 +1,17 @@
+diff --git a/sshfs.c b/sshfs.c
+index b212c36..a71bcf4 100644
+--- a/sshfs.c
++++ b/sshfs.c
+@@ -43,6 +43,12 @@
+ #include <pwd.h>
+ #include <grp.h>
+ #include <limits.h>
++#if defined(__CYGWIN__)
++#  include <windows.h>
++#  include <sys/cygwin.h>
++#  include <io.h>
++#  include <wchar.h>
++#endif
+ #ifdef __APPLE__
+ #  include <strings.h>
+ #  include <libgen.h>

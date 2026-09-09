@@ -20,11 +20,26 @@ SrcDir	= $(BldDir)/src
 RootDir	= $(BldDir)/root
 WixDir	= $(BldDir)/wix
 Status	= $(BldDir)/status
-BinExtra= ssh #bash ls mount
+VendorCore ?= 1
+VendorSSH ?= 1
+VendorDir = $(BldDir)/vendor
+VendorRuntime = $(VendorDir)/runtime
+AllowUnsigned ?= 0
+
+SSHFSCommit = 24448e2493533ead984d6ca322c583e1a26cc613
+SSHFSMainBlob = 3bd4ec57b3bf7c5eb8aff68dafa6a84264186269
+SSHFSMainTree = 35655f60d37403663238a73b4204cfd64fdca73c
+SSHFS_PATCH_SERIES = $(PrjDir)/patches/SERIES
+SSHFS_PATCHES = $(wildcard $(PrjDir)/patches/*.patch)
+BinExtra= #bash ls mount
 
 export PATH := $(shell cygpath -au "$$WIX")/bin:$(PATH)
 
 goal: $(Status) $(Status)/done
+
+$(Status)/depcheck: | $(Status)
+	tools/check-dependencies.sh --bootstrap
+	touch $(Status)/depcheck
 
 $(Status):
 	mkdir -p $(Status)
@@ -34,16 +49,33 @@ $(Status)/done: $(Status)/dist
 
 $(Status)/dist: $(Status)/wix
 	mkdir -p $(DistDir)
-	cp $(shell cygpath -aw $(WixDir)/sshfs-win-$(MyVersion)-$(MyArch).msi) $(DistDir)
-	tools/signtool sign \
+	@set -e; \
+	src='$(WixDir)/sshfs-win-$(MyVersion)-$(MyArch).msi'; \
+	dst='$(DistDir)/sshfs-win-$(MyVersion)-$(MyArch).msi'; \
+	tmp="$$dst.signing"; \
+	rm -f "$$tmp" "$$dst"; \
+	cp "$$src" "$$tmp"; \
+	trap 'rm -f "$$tmp"' EXIT HUP INT TERM; \
+	msi=$$(cygpath -aw "$$tmp"); \
+	if sed 's/\r$$//' tools/signtool | bash -s -- sign \
 		/ac tools/$(CrossCert) \
 		/i $(CertIssuer) \
 		/n $(MyCompanyName) \
 		/d $(MyDescription) \
-		/fd sha1 \
-		/t http://timestamp.digicert.com \
-		'$(shell cygpath -aw $(DistDir)/sshfs-win-$(MyVersion)-$(MyArch).msi)' || \
-		echo "SIGNING FAILED! The product has been successfully built, but not signed." 1>&2
+		/fd sha256 \
+		/tr https://timestamp.digicert.com \
+		/td sha256 \
+		"$$msi"; then \
+		echo "signed: $$msi"; \
+	elif test "$(AllowUnsigned)" = "1"; then \
+		echo "WARNING: signing failed; publishing unsigned local MSI because AllowUnsigned=1" >&2; \
+	else \
+		echo "ERROR: signing failed; no distribution MSI was published." >&2; \
+		echo "For a deliberate local-only unsigned build, rerun with AllowUnsigned=1." >&2; \
+		exit 1; \
+	fi; \
+	mv -f "$$tmp" "$$dst"; \
+	trap - EXIT HUP INT TERM
 	touch $(Status)/dist
 
 $(Status)/wix: $(Status)/sshfs-win sshfs-win.wxs
@@ -80,39 +112,95 @@ $(Status)/wix: $(Status)/sshfs-win sshfs-win.wxs
 		$(shell cygpath -aw $(WixDir)/sshfs-win.wixobj)
 	touch $(Status)/wix
 
-$(Status)/sshfs-win: $(Status)/root sshfs-win.c
+$(Status)/sshfs-win: $(Status)/root sshfs-win.c portable-format.h
 	gcc -o $(RootDir)/bin/sshfs-win sshfs-win.c
 	strip $(RootDir)/bin/sshfs-win
+	wrapper="$(RootDir)/bin/sshfs-win"; \
+	if test -f "$$wrapper.exe"; then wrapper="$$wrapper.exe"; fi; \
+	base=$$(basename "$$wrapper"); \
+	if ! awk -F '\t' -v b="$$base" '$$1 == b {found=1} END {exit !found}' $(RootDir)/etc/runtime-origins.tsv; then \
+		printf '%s\t%s\t%s\n' "$$base" local:sshfs-win "$$wrapper" >> $(RootDir)/etc/runtime-origins.tsv; \
+	fi
+	tools/write-dependency-manifest.sh $(RootDir)
+	tools/audit-runtime.sh $(RootDir)
 	touch $(Status)/sshfs-win
 
-$(Status)/root: $(Status)/make
-	mkdir -p $(RootDir)/{bin,dev/{mqueue,shm},etc}
-	(cygcheck $(SrcDir)/sshfs/build/sshfs; for f in $(BinExtra); do cygcheck /usr/bin/$$f; done) |\
-		tr -d '\r' | tr '\\' / | xargs cygpath -au | grep '^/usr/bin/' | sort | uniq |\
-		while read f; do cp $$f $(RootDir)/bin; done
-	cp $(SrcDir)/sshfs/build/sshfs $(RootDir)/bin
-	strip $(RootDir)/bin/sshfs
-	for f in $(BinExtra); do cp /usr/bin/$$f $(RootDir)/bin; done
-	cp -R $(PrjDir)/etc $(RootDir)
+$(Status)/vendor-core: $(Status)/depcheck | $(Status)
+ifeq ($(VendorCore),1)
+	tools/build-vendor-core.sh $(VendorDir)
+	touch $(Status)/vendor-core
+else
+	@echo "VendorCore disabled: release provenance checks will reject unpinned GLib/PCRE2"
+	touch $(Status)/vendor-core
+endif
+
+$(Status)/vendor-ssh: $(Status)/vendor-core | $(Status)
+ifeq ($(VendorSSH),1)
+	PKG_CONFIG_PATH="$(abspath $(VendorDir))/prefix/lib/pkgconfig" tools/check-dependencies.sh --vendor-ssh
+	tools/build-vendor-ssh.sh $(VendorDir)
+	touch $(Status)/vendor-ssh
+else
+	@echo "VendorSSH disabled: runtime must provide an explicitly configured ssh client"
+	touch $(Status)/vendor-ssh
+endif
+
+$(Status)/root: $(Status)/make $(Status)/vendor-ssh
+	mkdir -p $(RootDir)/{bin,etc,dev/{mqueue,shm}}
+	cp -R $(PrjDir)/etc/. $(RootDir)/etc/
+ifeq ($(VendorSSH),1)
+	tools/copy-runtime-closure.sh $(RootDir) $(VendorDir) \
+		$(SrcDir)/sshfs/build/sshfs.exe $(VendorRuntime)/bin/ssh.exe
+else
+	tools/copy-runtime-closure.sh $(RootDir) $(VendorDir) \
+		$(SrcDir)/sshfs/build/sshfs
+endif
+	for f in $(BinExtra); do tools/copy-runtime-closure.sh $(RootDir) $(VendorDir) /usr/bin/$$f; done
+	for f in pcre2.commit glib.commit pcre2-version.txt glib-version.txt \
+		openssl.commit openssh.commit openssl-version.txt openssh-version.txt; do \
+		if test -f $(VendorRuntime)/$$f; then cp -f $(VendorRuntime)/$$f $(RootDir)/etc/vendor-$$f; fi; \
+	done
+	tools/write-dependency-manifest.sh $(RootDir)
+	tools/audit-runtime.sh $(RootDir)
 	touch $(Status)/root
 
 $(Status)/make: $(Status)/config
 	cd $(SrcDir)/sshfs/build && ninja
 	touch $(Status)/make
 
-$(Status)/config: $(Status)/patch
+$(Status)/config: $(Status)/patch $(Status)/depcheck $(Status)/vendor-core
 	mkdir -p $(SrcDir)/sshfs/build
-	cd $(SrcDir)/sshfs/build && meson ..
+ifeq ($(VendorCore),1)
+	cd $(SrcDir)/sshfs/build && \
+		PKG_CONFIG_PATH="$(abspath $(VendorDir))/prefix/lib/pkgconfig" \
+		PATH="$(abspath $(VendorDir))/prefix/bin:$$PATH" \
+		meson setup .. --wrap-mode=nodownload
+else
+	cd $(SrcDir)/sshfs/build && meson setup ..
+endif
 	touch $(Status)/config
 
-$(Status)/patch: $(Status)/clone
-	cd $(SrcDir)/sshfs && for f in $(PrjDir)/patches/*.patch; do patch --binary -p1 <$$f; done
+$(Status)/patch: $(Status)/clone $(SSHFS_PATCH_SERIES) $(SSHFS_PATCHES)
+	set -e; cd $(SrcDir)/sshfs; \
+	while IFS= read -r name || test -n "$$name"; do \
+		case "$$name" in ''|\#*) continue ;; esac; \
+		f="$(PrjDir)/patches/$$name"; \
+		test -f "$$f" || { echo "missing patch listed in SERIES: $$name" >&2; exit 1; }; \
+		echo "applying $$f"; \
+		tmp=$$(mktemp); \
+		sed 's/\r$$//' <"$$f" >"$$tmp"; \
+		git apply --check --whitespace=error-all "$$tmp"; \
+		git apply --whitespace=error-all "$$tmp"; \
+		rm -f "$$tmp"; \
+	done < "$(SSHFS_PATCH_SERIES)"; \
+	git hash-object sshfs.c > $(abspath $(Status))/patched-sshfs-c.blob
 	touch $(Status)/patch
 
 $(Status)/clone:
 	mkdir -p $(SrcDir)
-	git clone $(PrjDir)/sshfs $(SrcDir)/sshfs
+	rm -rf "$(SrcDir)/sshfs"
+	cp -a "$(PrjDir)/sshfs" "$(SrcDir)/sshfs"
+	tools/verify-sshfs-source.sh --source-only "$(SrcDir)/sshfs"
 	touch $(Status)/clone
 
 clean:
-	git clean -dffx
+	rm -rf -- "$(PrjDir)/.build"

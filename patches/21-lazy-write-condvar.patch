@@ -1,0 +1,52 @@
+--- a/sshfs.c
++++ b/sshfs.c
+@@ -309,6 +309,7 @@
+ 	struct buffer handle;
+ 	struct list_head write_reqs;
+ 	pthread_cond_t write_finished;
++	int write_finished_initialized;
+ 	int write_error;
+ 	struct read_chunk *readahead;
+ 	off_t next_pos;
+@@ -2970,12 +2971,15 @@
+ 
+ 	sf = g_new0(struct sshfs_file, 1);
+ 	list_init(&sf->write_reqs);
+-	err = pthread_cond_init(&sf->write_finished, NULL);
+-	if (err != 0) {
+-		fprintf(stderr, "failed to initialize file write condition: %s\n",
+-			strerror(err));
+-		g_free(sf);
+-		return -err;
++	if (!sshfs.sync_write && (fi->flags & O_ACCMODE) != O_RDONLY) {
++		err = pthread_cond_init(&sf->write_finished, NULL);
++		if (err != 0) {
++			fprintf(stderr, "failed to initialize file write condition: %s\n",
++				strerror(err));
++			g_free(sf);
++			return -err;
++		}
++		sf->write_finished_initialized = 1;
+ 	}
+ 	/* Assume random read after open */
+ 	sf->is_seq = 0;
+@@ -3046,7 +3050,8 @@
+ 			}
+ 			pthread_mutex_unlock(&sshfs.lock);
+ 		}
+-		pthread_cond_destroy(&sf->write_finished);
++		if (sf->write_finished_initialized)
++			pthread_cond_destroy(&sf->write_finished);
+ 		g_free(sf);
+ 	}
+ 	buf_free(&buf);
+@@ -3132,7 +3137,8 @@
+ 		}
+ 		pthread_mutex_unlock(&sshfs.lock);
+ 	}
+-	pthread_cond_destroy(&sf->write_finished);
++	if (sf->write_finished_initialized)
++		pthread_cond_destroy(&sf->write_finished);
+ 	g_free(sf);
+ 	return 0;
+ }

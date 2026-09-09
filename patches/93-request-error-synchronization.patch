@@ -1,0 +1,39 @@
+--- a/sshfs.c
++++ b/sshfs.c
+@@ -2782,20 +2782,30 @@
+ 	return NULL;
+ }
+ 
++static int request_error_snapshot(struct request *req)
++{
++	int err;
++
++	pthread_mutex_lock(&sshfs.lock);
++	err = req->error;
++	pthread_mutex_unlock(&sshfs.lock);
++	return err;
++}
++
+ static int sftp_request_wait(struct request *req, uint8_t type,
+                              uint8_t expect_type, struct buffer *outbuf)
+ {
+ 	int err;
+ 
+-	if (req->error) {
+-		err = req->error;
++	err = request_error_snapshot(req);
++	if (err)
+ 		goto out;
+-	}
++
+ 	request_ready_wait(&req->ready);
+-	if (req->error) {
+-		err = req->error;
++
++	err = request_error_snapshot(req);
++	if (err)
+ 		goto out;
+-	}
+ 	err = -EIO;
+ 	if (req->reply_type != expect_type &&
+ 	    req->reply_type != SSH_FXP_STATUS) {

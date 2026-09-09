@@ -1,0 +1,310 @@
+--- a/sshfs.c
++++ b/sshfs.c
+@@ -233,6 +233,13 @@
+ 	unsigned remote_handles;
+ 	unsigned remote_handle_peak;
+ 	unsigned remote_handle_reservations;
++
++	/* SFTP protocol/extension capabilities belong to this transport session. */
++	uint32_t server_version;
++	int ext_posix_rename;
++	int ext_statvfs;
++	int ext_hardlink;
++	int ext_fsync;
+ };
+ 
+ struct buffer {
+@@ -456,7 +463,6 @@
+ 	int ptyfd;
+ 	int ptypassivefd;
+ 	int connvers;
+-	int server_version;
+ 	unsigned remote_uid;
+ 	unsigned local_uid;
+ 	unsigned remote_gid;
+@@ -471,10 +477,6 @@
+ 	int password_stdin;
+ 	int password_stdout;
+ 	char *password;
+-	int ext_posix_rename;
+-	int ext_statvfs;
+-	int ext_hardlink;
+-	int ext_fsync;
+ 	struct fuse_operations *op;
+ 	unsigned stall_warn;
+ 	unsigned handle_warn;
+@@ -2486,19 +2488,17 @@
+ 			DEBUG("Extension: %s <%s>\n", ext, extdata);
+ 
+ 			if (strcmp(ext, SFTP_EXT_POSIX_RENAME) == 0 &&
+-			    strcmp(extdata, "1") == 0) {
+-				sshfs.ext_posix_rename = 1;
+-				sshfs.rename_workaround = 0;
+-			}
++			    strcmp(extdata, "1") == 0)
++				conn->ext_posix_rename = 1;
+ 			if (strcmp(ext, SFTP_EXT_STATVFS) == 0 &&
+ 			    strcmp(extdata, "2") == 0)
+-				sshfs.ext_statvfs = 1;
++				conn->ext_statvfs = 1;
+ 			if (strcmp(ext, SFTP_EXT_HARDLINK) == 0 &&
+ 			    strcmp(extdata, "1") == 0)
+-				sshfs.ext_hardlink = 1;
++				conn->ext_hardlink = 1;
+ 			if (strcmp(ext, SFTP_EXT_FSYNC) == 0 &&
+ 			    strcmp(extdata, "1") == 0)
+-				sshfs.ext_fsync = 1;
++				conn->ext_fsync = 1;
+ 
+ 			free(ext);
+ 			free(extdata);
+@@ -2539,6 +2539,13 @@
+ 	int res = -1;
+ 	uint32_t version = 0;
+ 	struct buffer buf;
++
++	/* A reconnect starts a new capability domain; never inherit old flags. */
++	conn->server_version = 0;
++	conn->ext_posix_rename = 0;
++	conn->ext_statvfs = 0;
++	conn->ext_hardlink = 0;
++	conn->ext_fsync = 0;
+ 	buf_init(&buf, 0);
+ 	if (sftp_send_iov(conn, SSH_FXP_INIT, PROTO_VERSION, NULL, 0) == -1)
+ 		goto out;
+@@ -2549,7 +2556,7 @@
+ 	if (sftp_find_init_reply(conn, &version) == -1)
+ 		goto out;
+ 
+-	sshfs.server_version = version;
++	conn->server_version = version;
+ 	if (version > PROTO_VERSION) {
+ 		fprintf(stderr,
+ 			"Warning: server uses version: %i, we support: %i\n",
+@@ -2781,6 +2788,41 @@
+ 	return 0;
+ }
+ 
++struct conn_features {
++	struct conn *conn;
++	int connver;
++	uint32_t server_version;
++	int ext_posix_rename;
++	int ext_statvfs;
++	int ext_hardlink;
++};
++
++/*
++ * Select and, if necessary, establish one connection while holding the same
++ * lock that protects generation changes. The returned feature snapshot is
++ * therefore tied to connver and must be used with sftp_request_gen().
++ */
++static int get_conn_features(struct conn_features *features, int ensure_connected)
++{
++	struct conn *conn;
++	int err = 0;
++
++	pthread_mutex_lock(&sshfs.lock);
++	conn = get_conn_locked(NULL, NULL);
++	if (ensure_connected)
++		err = start_processing_thread(conn);
++	if (!err) {
++		features->conn = conn;
++		features->connver = conn->connver;
++		features->server_version = conn->server_version;
++		features->ext_posix_rename = conn->ext_posix_rename;
++		features->ext_statvfs = conn->ext_statvfs;
++		features->ext_hardlink = conn->ext_hardlink;
++	}
++	pthread_mutex_unlock(&sshfs.lock);
++	return err;
++}
++
+ static void *sshfs_init(struct fuse_conn_info *conn,
+                         struct fuse_config *cfg)
+ {
+@@ -3211,16 +3253,21 @@
+ 	int err;
+ 	struct buffer buf;
+ 	struct buffer name;
++	struct conn_features features;
+ 
+ 	assert(size > 0);
+ 
+-	if (sshfs.server_version < 3)
++	err = get_conn_features(&features, 1);
++	if (err)
++		return err;
++	if (features.server_version < 3)
+ 		return -EPERM;
+ 
+ 	buf_init(&buf, 0);
+ 	buf_add_path(&buf, path);
+ 	// Commutes with pending write(), so we can use any connection
+-	err = sftp_request(get_conn(NULL, NULL), SSH_FXP_READLINK, &buf, SSH_FXP_NAME, &name);
++	err = sftp_request_gen(features.conn, features.connver, NULL,
++			       SSH_FXP_READLINK, &buf, SSH_FXP_NAME, &name);
+ 	if (!err) {
+ 		uint32_t count;
+ 		char *link;
+@@ -3609,8 +3656,12 @@
+ {
+ 	int err;
+ 	struct buffer buf;
++	struct conn_features features;
+ 
+-	if (sshfs.server_version < 3)
++	err = get_conn_features(&features, 1);
++	if (err)
++		return err;
++	if (features.server_version < 3)
+ 		return -EPERM;
+ 
+ 	/* openssh sftp server doesn't follow standard: link target and
+@@ -3619,7 +3670,8 @@
+ 	buf_add_string(&buf, from);
+ 	buf_add_path(&buf, to);
+ 	// Commutes with pending write(), so we can use any connection
+-	err = sftp_request(get_conn(NULL, NULL), SSH_FXP_SYMLINK, &buf, SSH_FXP_STATUS, NULL);
++	err = sftp_request_gen(features.conn, features.connver, NULL,
++			       SSH_FXP_SYMLINK, &buf, SSH_FXP_STATUS, NULL);
+ 	buf_free(&buf);
+ 	return err;
+ }
+@@ -3661,7 +3713,8 @@
+ 	return err;
+ }
+ 
+-static int sshfs_ext_posix_rename(const char *from, const char *to)
++static int sshfs_ext_posix_rename(struct conn *conn, int connver,
++				  const char *from, const char *to)
+ {
+ 	int err;
+ 	struct buffer buf;
+@@ -3670,7 +3723,8 @@
+ 	buf_add_path(&buf, from);
+ 	buf_add_path(&buf, to);
+ 	// Commutes with pending write(), so we can use any connection
+-	err = sftp_request(get_conn(NULL, NULL), SSH_FXP_EXTENDED, &buf, SSH_FXP_STATUS, NULL);
++	err = sftp_request_gen(conn, connver, NULL, SSH_FXP_EXTENDED,
++			       &buf, SSH_FXP_STATUS, NULL);
+ 	buf_free(&buf);
+ 	return err;
+ }
+@@ -3686,16 +3740,23 @@
+ static int sshfs_rename(const char *from, const char *to, unsigned int flags)
+ {
+ 	int err;
++	int used_posix_ext = 0;
+ 	struct conntab_entry *ce;
++	struct conn_features features;
+ 
+ 	if(flags != 0)
+ 		return -EINVAL;
+ 
+-	if (sshfs.ext_posix_rename)
+-		err = sshfs_ext_posix_rename(from, to);
+-	else
++	err = get_conn_features(&features, 1);
++	if (err)
++		return err;
++	if (features.ext_posix_rename) {
++		used_posix_ext = 1;
++		err = sshfs_ext_posix_rename(features.conn, features.connver,
++					     from, to);
++	} else
+ 		err = sshfs_do_rename(from, to);
+-	if (err == -EPERM && sshfs.rename_workaround) {
++	if (err == -EPERM && sshfs.rename_workaround && !used_posix_ext) {
+ 		size_t tolen = strlen(to);
+ 		if (tolen + RENAME_TEMP_CHARS < PATH_MAX) {
+ 			int tmperr;
+@@ -3731,8 +3792,15 @@
+ static int sshfs_link(const char *from, const char *to)
+ {
+ 	int err = -ENOSYS;
++	struct conn_features features;
+ 
+-	if (sshfs.ext_hardlink && !sshfs.disable_hardlink) {
++	if (sshfs.disable_hardlink)
++		return err;
++	err = get_conn_features(&features, 1);
++	if (err)
++		return err;
++	err = -ENOSYS;
++	if (features.ext_hardlink) {
+ 		struct buffer buf;
+ 
+ 		buf_init(&buf, 0);
+@@ -3740,8 +3808,8 @@
+ 		buf_add_path(&buf, from);
+ 		buf_add_path(&buf, to);
+ 		// Commutes with pending write(), so we can use any connection
+-		err = sftp_request(get_conn(NULL, NULL), SSH_FXP_EXTENDED, &buf, SSH_FXP_STATUS,
+-				   NULL);
++		err = sftp_request_gen(features.conn, features.connver, NULL,
++				       SSH_FXP_EXTENDED, &buf, SSH_FXP_STATUS, NULL);
+ 		buf_free(&buf);
+ 	}
+ 
+@@ -4089,11 +4157,19 @@
+ 	if (err)
+ 		return err;
+ 
+-	if (!sshfs.ext_fsync)
+-		return err;
+-
+ 	struct buffer buf;
+ 	struct sshfs_file *sf = get_sshfs_file(fi);
++	int ext_fsync;
++
++	pthread_mutex_lock(&sshfs.lock);
++	if (sf->connver != sf->conn->connver) {
++		pthread_mutex_unlock(&sshfs.lock);
++		return -EIO;
++	}
++	ext_fsync = sf->conn->ext_fsync;
++	pthread_mutex_unlock(&sshfs.lock);
++	if (!ext_fsync)
++		return err;
+ 	buf_init(&buf, 0);
+ 	buf_add_string(&buf, SFTP_EXT_FSYNC);
+ 	buf_add_buf(&buf, &sf->handle);
+@@ -4620,7 +4696,8 @@
+ 	return err ? err : (int) size;
+ }
+ 
+-static int sshfs_ext_statvfs(const char *path, struct statvfs *stbuf)
++static int sshfs_ext_statvfs(struct conn *conn, int connver,
++			     const char *path, struct statvfs *stbuf)
+ {
+ 	int err;
+ 	struct buffer buf;
+@@ -4628,8 +4705,8 @@
+ 	buf_init(&buf, 0);
+ 	buf_add_string(&buf, SFTP_EXT_STATVFS);
+ 	buf_add_path(&buf, path);
+-	err = sftp_request(get_conn(NULL, NULL), SSH_FXP_EXTENDED, &buf,
+-			   SSH_FXP_EXTENDED_REPLY, &outbuf);
++	err = sftp_request_gen(conn, connver, NULL, SSH_FXP_EXTENDED, &buf,
++			       SSH_FXP_EXTENDED_REPLY, &outbuf);
+ 	if (!err) {
+ 		if (buf_get_statvfs(&outbuf, stbuf) == -1)
+ 			err = -EIO;
+@@ -4642,8 +4719,14 @@
+ 
+ static int sshfs_statfs(const char *path, struct statvfs *buf)
+ {
+-	if (sshfs.ext_statvfs)
+-		return sshfs_ext_statvfs(path, buf);
++	struct conn_features features;
++	int err;
++
++	err = get_conn_features(&features, 1);
++	if (err)
++		return err;
++	if (features.ext_statvfs)
++		return sshfs_ext_statvfs(features.conn, features.connver, path, buf);
+ 
+ 	buf->f_namemax = 255;
+ 	buf->f_bsize = sshfs.blksize ? sshfs.blksize : 4096;

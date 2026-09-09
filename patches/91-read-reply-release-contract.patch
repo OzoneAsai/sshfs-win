@@ -1,0 +1,146 @@
+--- a/sshfs.c
++++ b/sshfs.c
+@@ -357,6 +357,7 @@
+ 	struct buffer data;
+ 	size_t size;
+ 	ssize_t res;
++	int completed;
+ };
+ 
+ struct read_chunk {
+@@ -2303,18 +2304,27 @@
+ 	pthread_mutex_lock(&sshfs.lock);
+ 	req = (struct request *)
+ 		g_hash_table_lookup(sshfs.reqtab, GUINT_TO_POINTER(id));
+-	if (req == NULL)
+-		fprintf(stderr, "request %i not found\n", id);
+-	else {
+-		remote_handle_account_reply_locked(req, type, &buf,
+-						   &handle_warning);
+-		g_hash_table_remove(sshfs.reqtab, GUINT_TO_POINTER(id));
+-		request_release_outstanding_locked(req);
+-		conn->progress_epoch++;
++	if (req == NULL) {
++		fprintf(stderr, "protocol error: reply for unknown request %u\n", id);
++		pthread_mutex_unlock(&sshfs.lock);
++		buf_free(&buf);
++		return -1;
++	}
++	if (req->conn != conn || req->connver != conn->connver) {
++		fprintf(stderr,
++			"protocol error: request %u reply crossed connection identity\n",
++			id);
++		pthread_mutex_unlock(&sshfs.lock);
++		buf_free(&buf);
++		return -1;
+ 	}
++	remote_handle_account_reply_locked(req, type, &buf, &handle_warning);
++	g_hash_table_remove(sshfs.reqtab, GUINT_TO_POINTER(id));
++	request_release_outstanding_locked(req);
++	conn->progress_epoch++;
+ 	pthread_mutex_unlock(&sshfs.lock);
+ 	remote_handle_log_warning(&handle_warning);
+-	if (req != NULL) {
++	{
+ 		if (sshfs.debug) {
+ 			struct timeval now;
+ 			unsigned int difftime;
+@@ -2344,8 +2354,7 @@
+ 			request_free(req);
+ 			pthread_mutex_unlock(&sshfs.lock);
+ 		}
+-	} else
+-		buf_free(&buf);
++	}
+ 
+ 	return 0;
+ }
+@@ -4017,12 +4026,24 @@
+ 
+ static int sshfs_release(const char *path, struct fuse_file_info *fi)
+ {
++	int err;
++	int close_err = 0;
+ 	struct sshfs_file *sf = get_sshfs_file(fi);
+ 	struct buffer *handle = &sf->handle;
++
++	/*
++	 * Flush is part of the file's durability contract and must also run for a
++	 * stale generation so a disconnected handle reports -EIO instead of a
++	 * successful release.  CLOSE remains best-effort at protocol level, but
++	 * local/generation send failures are returned when no earlier write error
++	 * already explains the failure.
++	 */
++	err = sshfs_flush(path, fi);
+ 	if (sshfs_file_is_conn(sf)) {
+-		sshfs_flush(path, fi);
+-		sftp_request_gen(sf->conn, sf->connver, NULL, SSH_FXP_CLOSE,
+-				 handle, 0, NULL);
++		close_err = sftp_request_gen(sf->conn, sf->connver, NULL,
++					     SSH_FXP_CLOSE, handle, 0, NULL);
++		if (!err && close_err)
++			err = close_err;
+ 	}
+ 	buf_free(handle);
+ 	chunk_put_locked(sf->readahead);
+@@ -4041,7 +4062,7 @@
+ 	if (sf->write_finished_initialized)
+ 		pthread_cond_destroy(&sf->write_finished);
+ 	g_free(sf);
+-	return 0;
++	return err;
+ }
+ 
+ static void sshfs_read_end(struct request *req)
+@@ -4077,6 +4098,7 @@
+ 	} else {
+ 		rreq->res = -EIO;
+ 	}
++	rreq->completed = 1;
+ 
+ 	rreq->sio->num_reqs--;
+ 	if (!rreq->sio->num_reqs)
+@@ -4131,8 +4153,18 @@
+ 					    0, rreq, NULL);
+ 
+ 		buf_free(&buf);
+-		if (err)
++		if (err) {
++			/*
++			 * Failures before begin_func ownership (for example a generation
++			 * change or semaphore initialization failure) otherwise leave the
++			 * zero-initialized result looking exactly like EOF.
++			 */
++			if (!rreq->completed) {
++				rreq->res = err;
++				rreq->completed = 1;
++			}
+ 			break;
++		}
+ 
+ 		size -= bsize;
+ 		offset += bsize;
+@@ -4162,6 +4194,10 @@
+ 	while (!list_empty(&chunk->reqs) && size) {
+ 		rreq = list_entry(chunk->reqs.prev, struct read_req, list);
+ 
++		if (!rreq->completed) {
++			chunk->sio.error = -EIO;
++			break;
++		}
+ 		if (rreq->res < 0) {
+ 			chunk->sio.error = rreq->res;
+ 			break;
+@@ -4192,6 +4228,12 @@
+ 	if (res > 0) {
+ 		chunk->offset += res;
+ 		chunk->size -= res;
++	} else if (chunk->sio.error && chunk->sio.error != MY_EOF) {
++		/*
++		 * Do not turn the first transport/protocol/read failure into a
++		 * zero-length read.  A positive partial read still wins for this call.
++		 */
++		res = chunk->sio.error;
+ 	}
+ 
+ out:

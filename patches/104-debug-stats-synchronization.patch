@@ -1,0 +1,70 @@
+--- a/sshfs.c
++++ b/sshfs.c
+@@ -2391,6 +2391,11 @@
+ 			DEBUG("  [%05i] %14s %8ubytes (%ims)\n", id,
+ 			      type_name(type), msgsize, difftime);
+ 
++			/* Reply processors run once per connection. Keep process-global
++			 * diagnostic counters in the same shared-state lock domain as the
++			 * send counters; otherwise max_conns > 1 races even in debug-only
++			 * bookkeeping. */
++			pthread_mutex_lock(&sshfs.lock);
+ 			if (difftime < sshfs.min_rtt || !sshfs.num_received)
+ 				sshfs.min_rtt = difftime;
+ 			if (difftime > sshfs.max_rtt)
+@@ -2398,6 +2403,7 @@
+ 			sshfs.total_rtt += difftime;
+ 			sshfs.num_received++;
+ 			sshfs.bytes_received += msgsize;
++			pthread_mutex_unlock(&sshfs.lock);
+ 		}
+ 		req->reply = buf;
+ 		req->reply_type = type;
+@@ -6131,21 +6137,39 @@
+ 
+ 	if (sshfs.debug) {
+ 		unsigned int avg_rtt = 0;
++		uint64_t num_sent;
++		uint64_t bytes_sent;
++		uint64_t num_received;
++		uint64_t bytes_received;
++		uint64_t total_rtt;
++		unsigned int min_rtt;
++		unsigned int max_rtt;
++		unsigned int num_connect;
++
++		pthread_mutex_lock(&sshfs.lock);
++		num_sent = sshfs.num_sent;
++		bytes_sent = sshfs.bytes_sent;
++		num_received = sshfs.num_received;
++		bytes_received = sshfs.bytes_received;
++		total_rtt = sshfs.total_rtt;
++		min_rtt = sshfs.min_rtt;
++		max_rtt = sshfs.max_rtt;
++		num_connect = sshfs.num_connect;
++		pthread_mutex_unlock(&sshfs.lock);
+ 
+-		if (sshfs.num_sent)
+-			avg_rtt = sshfs.total_rtt / sshfs.num_sent;
++		if (num_sent)
++			avg_rtt = total_rtt / num_sent;
+ 
+ 		DEBUG("\n"
+ 		      "sent:               %llu messages, %llu bytes\n"
+ 		      "received:           %llu messages, %llu bytes\n"
+ 		      "rtt min/max/avg:    %ums/%ums/%ums\n"
+ 		      "num connect:        %u\n",
+-		      (unsigned long long) sshfs.num_sent,
+-		      (unsigned long long) sshfs.bytes_sent,
+-		      (unsigned long long) sshfs.num_received,
+-		      (unsigned long long) sshfs.bytes_received,
+-		      sshfs.min_rtt, sshfs.max_rtt, avg_rtt,
+-		      sshfs.num_connect);
++		      (unsigned long long) num_sent,
++		      (unsigned long long) bytes_sent,
++		      (unsigned long long) num_received,
++		      (unsigned long long) bytes_received,
++		      min_rtt, max_rtt, avg_rtt, num_connect);
+ 	}
+ 
+ 	fuse_opt_free_args(&args);

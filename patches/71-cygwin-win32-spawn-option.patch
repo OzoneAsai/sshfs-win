@@ -1,0 +1,21 @@
+diff --git a/sshfs.c b/sshfs.c
+index a71bcf4..6eae10b 100644
+--- a/sshfs.c
++++ b/sshfs.c
+@@ -426,6 +426,7 @@ struct sshfs {
+ 	int debug;
+ 	int foreground;
+ 	int reconnect;
++	int forkless_spawn;
+ 	int delay_connect;
+ 	int passive;
+ 	char *host;
+@@ -582,6 +583,8 @@ static struct fuse_opt sshfs_opts[] = {
+ 	SSHFS_OPT("sync_readdir",      sync_readdir, 1),
+ 	SSHFS_OPT("sshfs_debug",       debug, 1),
+ 	SSHFS_OPT("reconnect",         reconnect, 1),
++	SSHFS_OPT("forkless_spawn",    forkless_spawn, 1),
++	SSHFS_OPT("no_forkless_spawn", forkless_spawn, 0),
+ 	SSHFS_OPT("stall_warn=%u",      stall_warn, 0),
+ 	SSHFS_OPT("handle_warn=%u",     handle_warn, 0),
+ 	SSHFS_OPT("handle_limit=%u",    handle_limit, 0),

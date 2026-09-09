@@ -1,0 +1,45 @@
+--- a/sshfs.c
++++ b/sshfs.c
+@@ -3716,6 +3716,13 @@
+ 	// Commutes with pending write(), so we can use any connection
+ 	err = sftp_request(get_conn(NULL, NULL), SSH_FXP_REMOVE, &buf, SSH_FXP_STATUS, NULL);
+ 	buf_free(&buf);
++
++	if (!err && sshfs.max_conns > 1) {
++		/* The pathname no longer names the inode owned by this affinity. */
++		pthread_mutex_lock(&sshfs.lock);
++		g_hash_table_remove(sshfs.conntab, path);
++		pthread_mutex_unlock(&sshfs.lock);
++	}
+ 	return err;
+ }
+ 
+@@ -3808,12 +3815,25 @@
+ 		err = -EXDEV;
+ 
+ 	if (!err && sshfs.max_conns > 1 && strcmp(from, to) != 0) {
+-		/* rename(path, path) is a remote no-op; preserve local affinity. */
++		struct conntab_entry *to_ce;
++
++		/* Identical pathname strings are excluded by the outer condition. */
+ 		pthread_mutex_lock(&sshfs.lock);
+ 		ce = g_hash_table_lookup(sshfs.conntab, from);
++		to_ce = g_hash_table_lookup(sshfs.conntab, to);
+ 		if (ce != NULL) {
+-			g_hash_table_replace(sshfs.conntab, g_strdup(to), ce);
+-			g_hash_table_remove(sshfs.conntab, from);
++			/*
++			 * POSIX rename is also a no-op when both names are hard links
++			 * to the same inode. CP31-S makes that identity visible by
++			 * mapping both aliases to the same conntab entry.
++			 */
++			if (!(used_posix_ext && to_ce == ce)) {
++				g_hash_table_replace(sshfs.conntab, g_strdup(to), ce);
++				g_hash_table_remove(sshfs.conntab, from);
++			}
++		} else {
++			/* Destination now names another inode; discard stale affinity. */
++			g_hash_table_remove(sshfs.conntab, to);
+ 		}
+ 		pthread_mutex_unlock(&sshfs.lock);
+ 	}

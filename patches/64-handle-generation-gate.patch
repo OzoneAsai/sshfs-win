@@ -1,0 +1,478 @@
+diff --git a/sshfs.c b/sshfs.c
+index c965abc..865ffa2 100644
+--- a/sshfs.c
++++ b/sshfs.c
+@@ -241,6 +241,7 @@ struct dir_entry {
+ struct dir_handle {
+ 	struct buffer buf;
+ 	struct conn *conn;
++	int connver;
+ 	/*
+ 	 * Snapshot of the *current* enumeration. sshfs uses old-style readdir
+ 	 * over a single-pass SFTP directory handle. Each new enumeration
+@@ -2318,7 +2319,8 @@ out:
+ 	return err;
+ }
+ 
+-static int sftp_request_send(struct conn *conn, uint8_t type, struct iovec *iov,
++static int sftp_request_send_gen(struct conn *conn, int expected_connver,
++			     int *used_connver, uint8_t type, struct iovec *iov,
+ 			     size_t count, request_func begin_func, request_func end_func,
+ 			     int want_reply, void *data, struct request **reqp)
+ {
+@@ -2328,6 +2330,8 @@ static int sftp_request_send(struct conn *conn, uint8_t type, struct iovec *iov,
+ 
+ 	if (reqp != NULL)
+ 		*reqp = NULL;
++	if (used_connver != NULL)
++		*used_connver = -1;
+ 
+ 	req->want_reply = want_reply;
+ 	req->request_type = type;
+@@ -2343,6 +2347,11 @@ static int sftp_request_send(struct conn *conn, uint8_t type, struct iovec *iov,
+ 	pthread_mutex_lock(&sshfs.lock);
+ 	req->conn = conn;
+ 	req->conn->req_count++;
++	if (expected_connver >= 0 && expected_connver != conn->connver) {
++		err = -EIO;
++		pthread_mutex_unlock(&sshfs.lock);
++		goto out;
++	}
+ 	err = remote_handle_reserve_locked(req, type, want_reply);
+ 	if (err) {
+ 		pthread_mutex_unlock(&sshfs.lock);
+@@ -2358,7 +2367,14 @@ static int sftp_request_send(struct conn *conn, uint8_t type, struct iovec *iov,
+ 		pthread_mutex_unlock(&sshfs.lock);
+ 		goto out;
+ 	}
++	if (expected_connver >= 0 && expected_connver != conn->connver) {
++		err = -EIO;
++		pthread_mutex_unlock(&sshfs.lock);
++		goto out;
++	}
+ 	req->connver = conn->connver;
++	if (used_connver != NULL)
++		*used_connver = req->connver;
+ 	req->len = iov_length(iov, count) + 9;
+ 	while (sshfs.outstanding_len != 0 &&
+ 	       (sshfs.outstanding_len >= sshfs.max_outstanding_len ||
+@@ -2417,13 +2433,24 @@ out:
+ 	return err;
+ }
+ 
+-static int sftp_request_iov(struct conn *conn, uint8_t type, struct iovec *iov,
+-			    size_t count, uint8_t expect_type, struct buffer *outbuf)
++static int sftp_request_send(struct conn *conn, uint8_t type, struct iovec *iov,
++			     size_t count, request_func begin_func, request_func end_func,
++			     int want_reply, void *data, struct request **reqp)
++{
++	return sftp_request_send_gen(conn, -1, NULL, type, iov, count,
++				     begin_func, end_func, want_reply, data, reqp);
++}
++
++static int sftp_request_iov_gen(struct conn *conn, int expected_connver,
++				int *used_connver, uint8_t type,
++				struct iovec *iov, size_t count,
++				uint8_t expect_type, struct buffer *outbuf)
+ {
+ 	int err;
+ 	struct request *req = NULL;
+ 
+-	err = sftp_request_send(conn, type, iov, count, NULL, NULL,
++	err = sftp_request_send_gen(conn, expected_connver, used_connver,
++				type, iov, count, NULL, NULL,
+ 				expect_type, NULL, &req);
+ 	if (expect_type == 0)
+ 		return err;
+@@ -2433,13 +2460,29 @@ static int sftp_request_iov(struct conn *conn, uint8_t type, struct iovec *iov,
+ 	return sftp_request_wait(req, type, expect_type, outbuf);
+ }
+ 
+-static int sftp_request(struct conn *conn, uint8_t type, const struct buffer *buf,
+-			uint8_t expect_type, struct buffer *outbuf)
++static int sftp_request_iov(struct conn *conn, uint8_t type, struct iovec *iov,
++			    size_t count, uint8_t expect_type, struct buffer *outbuf)
++{
++	return sftp_request_iov_gen(conn, -1, NULL, type, iov, count,
++				    expect_type, outbuf);
++}
++
++static int sftp_request_gen(struct conn *conn, int expected_connver,
++			    int *used_connver, uint8_t type,
++			    const struct buffer *buf, uint8_t expect_type,
++			    struct buffer *outbuf)
+ {
+ 	struct iovec iov;
+ 
+ 	buf_to_iov(buf, &iov);
+-	return sftp_request_iov(conn, type, &iov, 1, expect_type, outbuf);
++	return sftp_request_iov_gen(conn, expected_connver, used_connver,
++				    type, &iov, 1, expect_type, outbuf);
++}
++
++static int sftp_request(struct conn *conn, uint8_t type, const struct buffer *buf,
++			uint8_t expect_type, struct buffer *outbuf)
++{
++	return sftp_request_gen(conn, -1, NULL, type, buf, expect_type, outbuf);
+ }
+ 
+ static int sshfs_access(const char *path, int mask)
+@@ -2595,14 +2638,15 @@ static int sshfs_readlink(const char *path, char *linkbuf, size_t size)
+ 	return err;
+ }
+ 
+-static int sftp_readdir_send(struct conn *conn, struct request **req,
+-			     struct buffer *handle)
++static int sftp_readdir_send(struct conn *conn, int connver,
++			     struct request **req, struct buffer *handle)
+ {
+ 	struct iovec iov;
+ 
+ 	buf_to_iov(handle, &iov);
+-	return sftp_request_send(conn, SSH_FXP_READDIR, &iov, 1, NULL, NULL,
+-				 SSH_FXP_NAME, NULL, req);
++	return sftp_request_send_gen(conn, connver, NULL, SSH_FXP_READDIR,
++				     &iov, 1, NULL, NULL, SSH_FXP_NAME,
++				     NULL, req);
+ }
+ 
+ static int sshfs_req_pending(struct request *req)
+@@ -2613,8 +2657,8 @@ static int sshfs_req_pending(struct request *req)
+ 		return 0;
+ }
+ 
+-static int sftp_readdir_async(struct conn *conn, struct buffer *handle,
+-			      GPtrArray *entries)
++static int sftp_readdir_async(struct conn *conn, int connver,
++			      struct buffer *handle, GPtrArray *entries)
+ {
+ 	int err = 0;
+ 	int outstanding = 0;
+@@ -2629,7 +2673,7 @@ static int sftp_readdir_async(struct conn *conn, struct buffer *handle,
+ 		int tmperr;
+ 
+ 		while (!done && outstanding < max) {
+-			tmperr = sftp_readdir_send(conn, &req, handle);
++			tmperr = sftp_readdir_send(conn, connver, &req, handle);
+ 
+ 			if (tmperr && !done) {
+ 				err = tmperr;
+@@ -2690,13 +2734,14 @@ static int sftp_readdir_async(struct conn *conn, struct buffer *handle,
+ 	return err;
+ }
+ 
+-static int sftp_readdir_sync(struct conn *conn, struct buffer *handle,
+-			     GPtrArray *entries)
++static int sftp_readdir_sync(struct conn *conn, int connver,
++			     struct buffer *handle, GPtrArray *entries)
+ {
+ 	int err;
+ 	do {
+ 		struct buffer name;
+-		err = sftp_request(conn, SSH_FXP_READDIR, handle, SSH_FXP_NAME, &name);
++		err = sftp_request_gen(conn, connver, NULL, SSH_FXP_READDIR,
++				       handle, SSH_FXP_NAME, &name);
+ 		if (!err) {
+ 			err = buf_get_entries(&name, entries);
+ 			buf_free(&name);
+@@ -2714,6 +2759,7 @@ static int sshfs_opendir(const char *path, struct fuse_file_info *fi)
+ 	struct conn *conn;
+ 	struct buffer buf;
+ 	struct dir_handle *handle;
++	int used_connver = -1;
+ 
+ 	handle = g_new0(struct dir_handle, 1);
+ 	if(handle == NULL)
+@@ -2723,11 +2769,13 @@ static int sshfs_opendir(const char *path, struct fuse_file_info *fi)
+ 	conn = get_conn(NULL, NULL);
+ 	buf_init(&buf, 0);
+ 	buf_add_path(&buf, path);
+-	err = sftp_request(conn, SSH_FXP_OPENDIR, &buf, SSH_FXP_HANDLE, &handle->buf);
++	err = sftp_request_gen(conn, -1, &used_connver, SSH_FXP_OPENDIR,
++			       &buf, SSH_FXP_HANDLE, &handle->buf);
+ 	if (!err) {
+ 		buf_finish(&handle->buf);
+ 		pthread_mutex_lock(&sshfs.lock);
+ 		handle->conn = conn;
++		handle->connver = used_connver;
+ 		handle->conn->dir_count++;
+ 		pthread_mutex_unlock(&sshfs.lock);
+ 		handle->has_handle = 1;
+@@ -2746,6 +2794,16 @@ static void free_dir_entry(gpointer data)
+ 	g_free(entry);
+ }
+ 
++static int sshfs_dir_is_conn(struct dir_handle *handle)
++{
++	int ret;
++
++	pthread_mutex_lock(&sshfs.lock);
++	ret = handle->connver == handle->conn->connver;
++	pthread_mutex_unlock(&sshfs.lock);
++	return ret;
++}
++
+ /*
+  * Reopen the SFTP directory handle. SFTP has no rewind, so re-reading a
+  * directory from the start means closing the exhausted handle and opening a
+@@ -2756,16 +2814,23 @@ static int sshfs_reopen_dir(struct dir_handle *handle)
+ 	struct buffer buf;
+ 	int err;
+ 
++	if (!sshfs_dir_is_conn(handle))
++		return -EIO;
++
+ 	if (handle->has_handle) {
+-		sftp_request(handle->conn, SSH_FXP_CLOSE, &handle->buf, 0, NULL);
++		err = sftp_request_gen(handle->conn, handle->connver, NULL,
++				       SSH_FXP_CLOSE, &handle->buf, 0, NULL);
++		if (err)
++			return err;
+ 		/* free + reset to a clean state so sftp_request can refill it */
+ 		buf_clear(&handle->buf);
+ 		handle->has_handle = 0;
+ 	}
+ 	buf_init(&buf, 0);
+ 	buf_add_path(&buf, handle->path);
+-	err = sftp_request(handle->conn, SSH_FXP_OPENDIR, &buf,
+-			   SSH_FXP_HANDLE, &handle->buf);
++	err = sftp_request_gen(handle->conn, handle->connver, NULL,
++			       SSH_FXP_OPENDIR, &buf,
++			       SSH_FXP_HANDLE, &handle->buf);
+ 	buf_free(&buf);
+ 	if (!err) {
+ 		buf_finish(&handle->buf);
+@@ -2784,6 +2849,8 @@ static int sshfs_readdir(const char *path, void *dbuf, fuse_fill_dir_t filler,
+ 	struct dir_handle *handle;
+ 
+ 	handle = (struct dir_handle*) fi->fh;
++	if (!sshfs_dir_is_conn(handle))
++		return -EIO;
+ 
+ 	/*
+ 	 * offset == 0 starts a fresh enumeration (a new listing or a
+@@ -2805,12 +2872,12 @@ static int sshfs_readdir(const char *path, void *dbuf, fuse_fill_dir_t filler,
+ 				g_ptr_array_new_with_free_func(free_dir_entry);
+ 			if (sshfs.sync_readdir)
+ 				handle->read_err = sftp_readdir_sync(
+-					handle->conn, &handle->buf,
+-					handle->entries);
++					handle->conn, handle->connver,
++					&handle->buf, handle->entries);
+ 			else
+ 				handle->read_err = sftp_readdir_async(
+-					handle->conn, &handle->buf,
+-					handle->entries);
++					handle->conn, handle->connver,
++					&handle->buf, handle->entries);
+ 			handle->buf_exhausted = 1;
+ 		}
+ 	}
+@@ -2839,11 +2906,14 @@ static int sshfs_releasedir(const char *path, struct fuse_file_info *fi)
+ 	handle = (struct dir_handle*) fi->fh;
+ 	err = 0;
+ 	if (handle->has_handle) {
+-		err = sftp_request(handle->conn, SSH_FXP_CLOSE, &handle->buf,
+-				   0, NULL);
++		if (sshfs_dir_is_conn(handle))
++			err = sftp_request_gen(handle->conn, handle->connver, NULL,
++					       SSH_FXP_CLOSE, &handle->buf,
++					       0, NULL);
+ 		buf_free(&handle->buf);
+ 	}
+ 	pthread_mutex_lock(&sshfs.lock);
++	assert(handle->conn->dir_count > 0);
+ 	handle->conn->dir_count--;
+ 	pthread_mutex_unlock(&sshfs.lock);
+ 	if (handle->entries)
+@@ -2881,6 +2951,7 @@ static int sshfs_mknod(const char *path, mode_t mode, dev_t rdev)
+ 	struct conn *conn;
+ 	struct buffer buf;
+ 	struct buffer handle;
++	int handle_connver = -1;
+ 	(void) rdev;
+ 
+ 	if ((mode & S_IFMT) != S_IFREG)
+@@ -2894,11 +2965,13 @@ static int sshfs_mknod(const char *path, mode_t mode, dev_t rdev)
+ 	buf_add_uint32(&buf, SSH_FXF_WRITE | SSH_FXF_CREAT | SSH_FXF_EXCL);
+ 	buf_add_uint32(&buf, SSH_FILEXFER_ATTR_PERMISSIONS);
+ 	buf_add_uint32(&buf, mode);
+-	err = sftp_request(conn, SSH_FXP_OPEN, &buf, SSH_FXP_HANDLE, &handle);
++	err = sftp_request_gen(conn, -1, &handle_connver, SSH_FXP_OPEN,
++			       &buf, SSH_FXP_HANDLE, &handle);
+ 	if (!err) {
+ 		int err2;
+ 		buf_finish(&handle);
+-		err2 = sftp_request(conn, SSH_FXP_CLOSE, &handle, SSH_FXP_STATUS, NULL);
++		err2 = sftp_request_gen(conn, handle_connver, NULL, SSH_FXP_CLOSE,
++				        &handle, SSH_FXP_STATUS, NULL);
+ 		if (!err)
+ 			err = err2;
+ 		buf_free(&handle);
+@@ -3092,9 +3165,13 @@ static int sshfs_chmod(const char *path, mode_t mode,
+ 	/* FIXME: really needs LSETSTAT extension (debian Bug#640038) */
+ 	// Commutes with pending write(), so we can use any connection
+ 	// if the file is not open.
+-	err = sftp_request(get_conn(sf, NULL),
+-			   sf == NULL ? SSH_FXP_SETSTAT : SSH_FXP_FSETSTAT,
+-			   &buf, SSH_FXP_STATUS, NULL);
++	if (sf == NULL)
++		err = sftp_request(get_conn(NULL, NULL), SSH_FXP_SETSTAT,
++				   &buf, SSH_FXP_STATUS, NULL);
++	else
++		err = sftp_request_gen(sf->conn, sf->connver, NULL,
++				       SSH_FXP_FSETSTAT, &buf,
++				       SSH_FXP_STATUS, NULL);
+ 	buf_free(&buf);
+ 	return err;
+ }
+@@ -3137,9 +3214,13 @@ static int sshfs_chown(const char *path, uid_t uid, gid_t gid,
+ 
+ 	// Commutes with pending write(), so we can use any connection
+ 	// if the file is not open.
+-	err = sftp_request(get_conn(sf, NULL),
+-			   sf == NULL ? SSH_FXP_SETSTAT : SSH_FXP_FSETSTAT,
+-			   &buf, SSH_FXP_STATUS, NULL);
++	if (sf == NULL)
++		err = sftp_request(get_conn(NULL, NULL), SSH_FXP_SETSTAT,
++				   &buf, SSH_FXP_STATUS, NULL);
++	else
++		err = sftp_request_gen(sf->conn, sf->connver, NULL,
++				       SSH_FXP_FSETSTAT, &buf,
++				       SSH_FXP_STATUS, NULL);
+ 	buf_free(&buf);
+ 	return err;
+ }
+@@ -3185,9 +3266,13 @@ static int sshfs_utimens(const char *path, const struct timespec tv[2],
+ 	buf_add_uint32(&buf, asec);
+ 	buf_add_uint32(&buf, msec);
+ 
+-	err = sftp_request(get_conn(sf, path),
+-			   sf == NULL ? SSH_FXP_SETSTAT : SSH_FXP_FSETSTAT,
+-			   &buf, SSH_FXP_STATUS, NULL);
++	if (sf == NULL)
++		err = sftp_request(get_conn(NULL, path), SSH_FXP_SETSTAT,
++				   &buf, SSH_FXP_STATUS, NULL);
++	else
++		err = sftp_request_gen(sf->conn, sf->connver, NULL,
++				       SSH_FXP_FSETSTAT, &buf,
++				       SSH_FXP_STATUS, NULL);
+ 	buf_free(&buf);
+ 	return err;
+ }
+@@ -3283,8 +3368,9 @@ static int sshfs_open_common(const char *path, mode_t mode,
+ 	buf_add_uint32(&buf, SSH_FILEXFER_ATTR_PERMISSIONS);
+ 	buf_add_uint32(&buf, mode);
+ 	buf_to_iov(&buf, &iov);
+-	err = sftp_request_send(sf->conn, SSH_FXP_OPEN, &iov, 1,
+-				NULL, NULL, 1, NULL, &open_req);
++	err = sftp_request_send_gen(sf->conn, -1, &sf->connver,
++				    SSH_FXP_OPEN, &iov, 1, NULL, NULL,
++				    1, NULL, &open_req);
+ 	if (err && open_req == NULL)
+ 		goto open_done;
+ 	buf_clear(&buf);
+@@ -3299,7 +3385,8 @@ static int sshfs_open_common(const char *path, mode_t mode,
+ 				&sf->handle);
+ 	if (!err && err2) {
+ 		buf_finish(&sf->handle);
+-		sftp_request(sf->conn, SSH_FXP_CLOSE, &sf->handle, 0, NULL);
++		sftp_request_gen(sf->conn, sf->connver, NULL, SSH_FXP_CLOSE,
++				 &sf->handle, 0, NULL);
+ 		buf_free(&sf->handle);
+ 		err = err2;
+ 	}
+@@ -3385,7 +3472,8 @@ static int sshfs_fsync(const char *path, int isdatasync,
+ 	buf_init(&buf, 0);
+ 	buf_add_string(&buf, SFTP_EXT_FSYNC);
+ 	buf_add_buf(&buf, &sf->handle);
+-	err = sftp_request(sf->conn, SSH_FXP_EXTENDED, &buf, SSH_FXP_STATUS, NULL);
++	err = sftp_request_gen(sf->conn, sf->connver, NULL, SSH_FXP_EXTENDED,
++			       &buf, SSH_FXP_STATUS, NULL);
+ 	buf_free(&buf);
+ 	return err;
+ }
+@@ -3396,7 +3484,8 @@ static int sshfs_release(const char *path, struct fuse_file_info *fi)
+ 	struct buffer *handle = &sf->handle;
+ 	if (sshfs_file_is_conn(sf)) {
+ 		sshfs_flush(path, fi);
+-		sftp_request(sf->conn, SSH_FXP_CLOSE, handle, 0, NULL);
++		sftp_request_gen(sf->conn, sf->connver, NULL, SSH_FXP_CLOSE,
++				 handle, 0, NULL);
+ 	}
+ 	buf_free(handle);
+ 	chunk_put_locked(sf->readahead);
+@@ -3499,10 +3588,10 @@ static struct read_chunk *sshfs_send_read(struct sshfs_file *sf, size_t size,
+ 		buf_add_uint64(&buf, offset);
+ 		buf_add_uint32(&buf, bsize);
+ 		buf_to_iov(&buf, &iov[0]);
+-		err = sftp_request_send(sf->conn, SSH_FXP_READ, iov, 1,
+-					sshfs_read_begin,
+-					sshfs_read_end,
+-					0, rreq, NULL);
++		err = sftp_request_send_gen(sf->conn, sf->connver, NULL,
++					    SSH_FXP_READ, iov, 1,
++					    sshfs_read_begin, sshfs_read_end,
++					    0, rreq, NULL);
+ 
+ 		buf_free(&buf);
+ 		if (err)
+@@ -3724,9 +3813,10 @@ static int sshfs_async_write(struct sshfs_file *sf, const char *wbuf,
+ 		buf_to_iov(&buf, &iov[0]);
+ 		iov[1].iov_base = (void *) wbuf;
+ 		iov[1].iov_len = bsize;
+-		err = sftp_request_send(sf->conn, SSH_FXP_WRITE, iov, 2,
+-					sshfs_write_begin, sshfs_write_end,
+-					0, sf, NULL);
++		err = sftp_request_send_gen(sf->conn, sf->connver, NULL,
++					    SSH_FXP_WRITE, iov, 2,
++					    sshfs_write_begin, sshfs_write_end,
++					    0, sf, NULL);
+ 		buf_free(&buf);
+ 		size -= bsize;
+ 		wbuf += bsize;
+@@ -3789,10 +3879,11 @@ static int sshfs_sync_write(struct sshfs_file *sf, const char *wbuf,
+ 		buf_to_iov(&buf, &iov[0]);
+ 		iov[1].iov_base = (void *) wbuf;
+ 		iov[1].iov_len = bsize;
+-		err = sftp_request_send(sf->conn, SSH_FXP_WRITE, iov, 2,
+-					sshfs_sync_write_begin,
+-					sshfs_sync_write_end,
+-					0, &sio, NULL);
++		err = sftp_request_send_gen(sf->conn, sf->connver, NULL,
++					    SSH_FXP_WRITE, iov, 2,
++					    sshfs_sync_write_begin,
++					    sshfs_sync_write_end,
++					    0, &sio, NULL);
+ 		buf_free(&buf);
+ 		size -= bsize;
+ 		wbuf += bsize;
+@@ -3905,9 +3996,13 @@ static int sshfs_truncate(const char *path, off_t size,
+ 
+ 	buf_add_uint32(&buf, SSH_FILEXFER_ATTR_SIZE);
+ 	buf_add_uint64(&buf, size);
+-	err = sftp_request(get_conn(sf, path),
+-			   sf == NULL ? SSH_FXP_SETSTAT : SSH_FXP_FSETSTAT,
+-			   &buf, SSH_FXP_STATUS, NULL);
++	if (sf == NULL)
++		err = sftp_request(get_conn(NULL, path), SSH_FXP_SETSTAT,
++				   &buf, SSH_FXP_STATUS, NULL);
++	else
++		err = sftp_request_gen(sf->conn, sf->connver, NULL,
++				       SSH_FXP_FSETSTAT, &buf,
++				       SSH_FXP_STATUS, NULL);
+ 	buf_free(&buf);
+ 
+ 	return err;
+@@ -3936,8 +4031,9 @@ static int sshfs_getattr(const char *path, struct stat *stbuf,
+ 	}
+ 	else {
+ 		buf_add_buf(&buf, &sf->handle);
+-		err = sftp_request(sf->conn, SSH_FXP_FSTAT, &buf,
+-				   SSH_FXP_ATTRS, &outbuf);
++		err = sftp_request_gen(sf->conn, sf->connver, NULL,
++				       SSH_FXP_FSTAT, &buf,
++				       SSH_FXP_ATTRS, &outbuf);
+ 	}
+ 	if (!err) {
+ 		err = buf_get_attrs(&outbuf, stbuf, NULL);

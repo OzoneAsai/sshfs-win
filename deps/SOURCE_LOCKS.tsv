@@ -1,0 +1,10 @@
+component	version	git_ref	commit	role
+libfuse/sshfs	2026-08-06 snapshot	24448e2493533ead984d6ca322c583e1a26cc613	24448e2493533ead984d6ca322c583e1a26cc613	filesystem core
+OpenSSL	3.5.8 LTS	openssl-3.5.8	f4dc4d58b48d346a8270183f89acf826d459b0ca	crypto for source-built Cygwin OpenSSH
+OpenSSH portable	10.5p1	V_10_5_P1	b3f7344209832eea8ece447d871ea748767c444b	SSH client
+WinFsp	2.1.25156	v2.1	ddca7bd5481857a65ba552f643b8776fd070836f	Windows FUSE/launcher baseline; signed tag
+Cygwin	3.6.10-1	stable package	3.6.10-1	POSIX runtime baseline
+GLib	2.88.3	2.88.3	43bc79ea8803e33c5eb368085e2d5906f9f98079	SSHFS runtime dependency; signed stable tag
+PCRE2	10.48	pcre2-10.48	7978954dbd2efc6f2196869290553cf1871b4ce6	regex runtime for GLib; release tar.bz2 sha256=b6c68fdf6f3ac31388b50aa89ff0fc49c00c987c16e7b5146491d12003f2c8ed
+Meson	1.8.5	1.8.5	bc21dd205fc930bb19c08793b253bfd5caf27af8	build-only; signed tag
+Ninja	1.13.2	v1.13.2	3441b633c2fe2c494e958780ba0f4227b1327634	build-only

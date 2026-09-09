@@ -1,0 +1,31 @@
+--- a/sshfs.c
++++ b/sshfs.c
+@@ -3843,6 +3843,28 @@
+ 		err = sftp_request_gen(features.conn, features.connver, NULL,
+ 				       SSH_FXP_EXTENDED, &buf, SSH_FXP_STATUS, NULL);
+ 		buf_free(&buf);
++
++		if (!err && sshfs.max_conns > 1) {
++			struct conntab_entry *ce;
++
++			/*
++			 * A hard link creates another pathname for the same inode.  If
++			 * the source is pinned to a connection by an open file, the new
++			 * pathname must inherit that affinity so later path operations
++			 * cannot bypass pending writes through another connection.
++			 *
++			 * The hash key is not an ownership reference: open file objects
++			 * own ce through refcount, and release removes every key that
++			 * points at ce when the final open reference disappears.
++			 */
++			pthread_mutex_lock(&sshfs.lock);
++			ce = g_hash_table_lookup(sshfs.conntab, from);
++			if (ce != NULL)
++				g_hash_table_replace(sshfs.conntab, g_strdup(to), ce);
++			else
++				g_hash_table_remove(sshfs.conntab, to);
++			pthread_mutex_unlock(&sshfs.lock);
++		}
+ 	}
+ 
+ 	return err;

@@ -90,6 +90,38 @@
                             Value="svc %1 %2 %U" />
                         <RegistryValue
                             Type="string"
+        Name="RunAs"
+        Value="." />
+    <RegistryValue
+        Type="integer"
+        Name="sshfs.reconnect"
+        Value="0" />
+    <RegistryValue
+        Type="integer"
+            Name="sshfs.delay_connect"
+            Value="0" />
+        <RegistryValue
+            Type="integer"
+            Name="sshfs.sync_write"
+            Value="1" />
+        <RegistryValue
+            Type="integer"
+        Name="sshfs.stall_warn"
+        Value="0" />
+    <RegistryValue
+            Type="integer"
+            Name="sshfs.handle_warn"
+            Value="0" />
+        <RegistryValue
+            Type="integer"
+            Name="sshfs.handle_limit"
+            Value="0" />
+        <RegistryValue
+            Type="integer"
+            Name="sshfs.max_conns"
+            Value="1" />
+        <RegistryValue
+        Type="string"
                             Name="Security"
                             Value="D:P(A;;RPWPLC;;;WD)" />
                         <RegistryValue
@@ -120,6 +152,38 @@
                             Value="svc %1 %2 %U" />
                         <RegistryValue
                             Type="string"
+        Name="RunAs"
+        Value="." />
+    <RegistryValue
+        Type="integer"
+        Name="sshfs.reconnect"
+        Value="0" />
+    <RegistryValue
+        Type="integer"
+            Name="sshfs.delay_connect"
+            Value="0" />
+        <RegistryValue
+            Type="integer"
+            Name="sshfs.sync_write"
+            Value="1" />
+        <RegistryValue
+            Type="integer"
+        Name="sshfs.stall_warn"
+        Value="0" />
+    <RegistryValue
+            Type="integer"
+            Name="sshfs.handle_warn"
+            Value="0" />
+        <RegistryValue
+            Type="integer"
+            Name="sshfs.handle_limit"
+            Value="0" />
+        <RegistryValue
+            Type="integer"
+            Name="sshfs.max_conns"
+            Value="1" />
+        <RegistryValue
+        Type="string"
                             Name="Security"
                             Value="D:P(A;;RPWPLC;;;WD)" />
                         <RegistryValue
@@ -154,6 +218,38 @@
                             Value="svc %1 %2 %U" />
                         <RegistryValue
                             Type="string"
+        Name="RunAs"
+        Value="." />
+    <RegistryValue
+        Type="integer"
+        Name="sshfs.reconnect"
+        Value="0" />
+    <RegistryValue
+        Type="integer"
+            Name="sshfs.delay_connect"
+            Value="1" />
+        <RegistryValue
+            Type="integer"
+            Name="sshfs.sync_write"
+            Value="1" />
+        <RegistryValue
+            Type="integer"
+        Name="sshfs.stall_warn"
+        Value="0" />
+    <RegistryValue
+            Type="integer"
+            Name="sshfs.handle_warn"
+            Value="0" />
+        <RegistryValue
+            Type="integer"
+            Name="sshfs.handle_limit"
+            Value="0" />
+        <RegistryValue
+            Type="integer"
+            Name="sshfs.max_conns"
+            Value="1" />
+        <RegistryValue
+        Type="string"
                             Name="Security"
                             Value="D:P(A;;RPWPLC;;;WD)" />
                         <RegistryValue
@@ -184,6 +280,38 @@
                             Value="svc %1 %2 %U" />
                         <RegistryValue
                             Type="string"
+        Name="RunAs"
+        Value="." />
+    <RegistryValue
+        Type="integer"
+        Name="sshfs.reconnect"
+        Value="0" />
+    <RegistryValue
+        Type="integer"
+            Name="sshfs.delay_connect"
+            Value="1" />
+        <RegistryValue
+            Type="integer"
+            Name="sshfs.sync_write"
+            Value="1" />
+        <RegistryValue
+            Type="integer"
+        Name="sshfs.stall_warn"
+        Value="0" />
+    <RegistryValue
+            Type="integer"
+            Name="sshfs.handle_warn"
+            Value="0" />
+        <RegistryValue
+            Type="integer"
+            Name="sshfs.handle_limit"
+            Value="0" />
+        <RegistryValue
+            Type="integer"
+            Name="sshfs.max_conns"
+            Value="1" />
+        <RegistryValue
+        Type="string"
                             Name="Security"
                             Value="D:P(A;;RPWPLC;;;WD)" />
                         <RegistryValue

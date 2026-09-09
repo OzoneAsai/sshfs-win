@@ -1,0 +1,74 @@
+--- a/sshfs.c
++++ b/sshfs.c
+@@ -1911,7 +1911,43 @@
+ 	return 0;
+ }
+ 
+-static int connect_vsock(struct conn *conn, char *vsock)
++static int parse_vsock_address(const char *vsock, unsigned int *cid,
++			       unsigned int *port)
++{
++	const char *delim;
++	const char *p;
++	char *end;
++	unsigned long value;
++
++	if (vsock == NULL || cid == NULL || port == NULL)
++		return -1;
++	delim = strchr(vsock, ':');
++	if (delim == NULL || delim == vsock || delim[1] == '\0')
++		return -1;
++	for (p = vsock; p < delim; p++) {
++		if (*p < '0' || *p > '9')
++			return -1;
++	}
++	for (p = delim + 1; *p != '\0'; p++) {
++		if (*p < '0' || *p > '9')
++			return -1;
++	}
++
++	errno = 0;
++	value = strtoul(vsock, &end, 10);
++	if (errno != 0 || end != delim || value > UINT_MAX)
++		return -1;
++	*cid = (unsigned int) value;
++
++	errno = 0;
++	value = strtoul(delim + 1, &end, 10);
++	if (errno != 0 || *end != '\0' || value > UINT_MAX)
++		return -1;
++	*port = (unsigned int) value;
++	return 0;
++}
++
++static int connect_vsock(struct conn *conn, const char *vsock)
+ {
+ #ifndef __linux__
+ 	fprintf(stderr, "vsock is not available\n");
+@@ -1922,24 +1958,9 @@
+ 	struct sockaddr_vm addr;
+ 	unsigned int cid;
+ 	unsigned int port;
+-	char *delim;
+ 
+-	delim = strchr(vsock, ':');
+-	if (delim == NULL) {
+-		fprintf(stderr, "invalid vsock, expecting CID:PORT\n");
+-		return -1;
+-	}
+-	*delim = '\0';
+-	errno = 0;
+-	cid = strtoul(vsock, NULL, 10);
+-	if (errno) {
+-		perror("invalid cid");
+-		return -1;
+-	}
+-	errno = 0;
+-	port = strtoul(delim + 1, NULL, 10);
+-	if (errno) {
+-		perror("invalid port");
++	if (parse_vsock_address(vsock, &cid, &port) == -1) {
++		fprintf(stderr, "invalid vsock, expecting decimal CID:PORT\n");
+ 		return -1;
+ 	}
+ 

@@ -1,0 +1,32 @@
+--- a/sshfs.c
++++ b/sshfs.c
+@@ -3641,7 +3641,7 @@
+ 		if (sshfs_dir_is_conn(handle))
+ 			err = sftp_request_gen(handle->conn, handle->connver, NULL,
+ 					       SSH_FXP_CLOSE, &handle->buf,
+-					       0, NULL);
++					       SSH_FXP_STATUS, NULL);
+ 		buf_free(&handle->buf);
+ 	}
+ 	pthread_mutex_lock(&sshfs.lock);
+@@ -4302,14 +4302,16 @@
+ 	/*
+ 	 * Flush is part of the file's durability contract and must also run for a
+ 	 * stale generation so a disconnected handle reports -EIO instead of a
+-	 * successful release.  CLOSE remains best-effort at protocol level, but
+-	 * local/generation send failures are returned when no earlier write error
+-	 * already explains the failure.
++	 * successful release.  For a live generation, CLOSE is also a remote
++	 * completion barrier: reply-side handle accounting retires the server handle
++	 * before release returns, so a following OPEN cannot spuriously hit the
++	 * configured handle limit while the CLOSE acknowledgement is still pending.
+ 	 */
+ 	err = sshfs_flush(path, fi);
+ 	if (sshfs_file_is_conn(sf)) {
+ 		close_err = sftp_request_gen(sf->conn, sf->connver, NULL,
+-					     SSH_FXP_CLOSE, handle, 0, NULL);
++					     SSH_FXP_CLOSE, handle,
++					     SSH_FXP_STATUS, NULL);
+ 		if (!err && close_err)
+ 			err = close_err;
+ 	}

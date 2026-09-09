@@ -1,0 +1,13 @@
+--- a/sshfs.c
++++ b/sshfs.c
+@@ -6157,8 +6157,8 @@
+ 		num_connect = sshfs.num_connect;
+ 		pthread_mutex_unlock(&sshfs.lock);
+ 
+-		if (num_sent)
+-			avg_rtt = total_rtt / num_sent;
++		if (num_received)
++			avg_rtt = total_rtt / num_received;
+ 
+ 		DEBUG("\n"
+ 		      "sent:               %llu messages, %llu bytes\n"

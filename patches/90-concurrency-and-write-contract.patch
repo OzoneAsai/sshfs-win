@@ -1,0 +1,173 @@
+--- a/sshfs.c
++++ b/sshfs.c
+@@ -1172,8 +1172,8 @@
+ 	return 0;
+ }
+ 
+-static struct conn* get_conn(const struct sshfs_file *sf,
+-			     const char *path)
++static struct conn* get_conn_locked(const struct sshfs_file *sf,
++				    const char *path)
+ {
+ 	struct conntab_entry *ce;
+ 	int i;
+@@ -1185,15 +1185,9 @@
+ 		return sf->conn;
+ 
+ 	if (path != NULL) {
+-		pthread_mutex_lock(&sshfs.lock);
+ 		ce = g_hash_table_lookup(sshfs.conntab, path);
+-
+-		if (ce != NULL) {
+-			struct conn *conn = ce->conn;
+-			pthread_mutex_unlock(&sshfs.lock);
+-			return conn;
+-		}
+-		pthread_mutex_unlock(&sshfs.lock);
++		if (ce != NULL)
++			return ce->conn;
+ 	}
+ 
+ 	int best_index = 0;
+@@ -1217,8 +1211,7 @@
+ 		/*
+ 		 * When explicit handle admission control is enabled, prefer a
+ 		 * connection that still has server-handle capacity. The admission
+-		 * reservation under sshfs.lock remains authoritative; this selection
+-		 * is only a best-effort routing hint and cannot bypass the cap.
++		 * reservation under sshfs.lock remains authoritative.
+ 		 */
+ 		if (sshfs.handle_limit != 0 && pressure < sshfs.handle_limit &&
+ 		    (capacity_index == -1 || pressure < capacity_pressure ||
+@@ -1231,6 +1224,22 @@
+ 	if (capacity_index != -1)
+ 		return &sshfs.conns[capacity_index];
+ 	return &sshfs.conns[best_index];
++}
++
++static struct conn* get_conn(const struct sshfs_file *sf,
++			     const char *path)
++{
++	struct conn *conn;
++
++	if (sshfs.max_conns == 1)
++		return &sshfs.conns[0];
++	if (sf != NULL)
++		return sf->conn;
++
++	pthread_mutex_lock(&sshfs.lock);
++	conn = get_conn_locked(NULL, path);
++	pthread_mutex_unlock(&sshfs.lock);
++	return conn;
+ }
+ 
+ static int pty_master(char **name)
+@@ -3876,7 +3885,7 @@
+ 		if (!ce) {
+ 			ce = g_malloc(sizeof(struct conntab_entry));
+ 			ce->refcount = 0;
+-			ce->conn = get_conn(NULL, NULL);
++			ce->conn = get_conn_locked(NULL, NULL);
+ 			g_hash_table_insert(sshfs.conntab, g_strdup(path), ce);
+ 		}
+ 		sf->conn = ce->conn;
+@@ -4298,6 +4307,29 @@
+ 		return sshfs_async_read(sf, rbuf, size, offset);
+ }
+ 
++static int sshfs_write_reply_error(struct request *req)
++{
++	uint32_t serr;
++
++	if (req->error)
++		return req->error;
++	if (!req->replied) {
++		fprintf(stderr, "write request completed without a reply\n");
++		return -EIO;
++	}
++	if (req->reply_type != SSH_FXP_STATUS) {
++		fprintf(stderr, "protocol error: write reply is not STATUS\n");
++		return -EIO;
++	}
++	if (buf_get_uint32(&req->reply, &serr) == -1) {
++		fprintf(stderr, "protocol error: malformed write STATUS reply\n");
++		return -EIO;
++	}
++	if (serr != SSH_FX_OK)
++		return -sftp_error_to_errno(serr);
++	return 0;
++}
++
+ static void sshfs_write_begin(struct request *req)
+ {
+ 	struct sshfs_file *sf = (struct sshfs_file *) req->data;
+@@ -4306,19 +4338,12 @@
+ 
+ static void sshfs_write_end(struct request *req)
+ {
+-	uint32_t serr;
++	int err;
+ 	struct sshfs_file *sf = (struct sshfs_file *) req->data;
+ 
+-	if (req->error)
+-		sf->write_error = req->error;
+-	else if (req->replied) {
+-		if (req->reply_type != SSH_FXP_STATUS) {
+-			fprintf(stderr, "protocol error\n");
+-		} else if (buf_get_uint32(&req->reply, &serr) != -1 &&
+-			serr != SSH_FX_OK) {
+-			sf->write_error = -EIO;
+-		}
+-	}
++	err = sshfs_write_reply_error(req);
++	if (err)
++		sf->write_error = err;
+ 	list_del(&req->list);
+ 	pthread_cond_broadcast(&sf->write_finished);
+ }
+@@ -4362,19 +4387,12 @@
+ 
+ static void sshfs_sync_write_end(struct request *req)
+ {
+-	uint32_t serr;
++	int err;
+ 	struct sshfs_io *sio = (struct sshfs_io *) req->data;
+ 
+-	if (req->error) {
+-		sio->error = req->error;
+-	} else if (req->replied) {
+-		if (req->reply_type != SSH_FXP_STATUS) {
+-			fprintf(stderr, "protocol error\n");
+-		} else if (buf_get_uint32(&req->reply, &serr) != -1 &&
+-			serr != SSH_FX_OK) {
+-			sio->error = -EIO;
+-		}
+-	}
++	err = sshfs_write_reply_error(req);
++	if (err)
++		sio->error = err;
+ 	sio->num_reqs--;
+ 	if (!sio->num_reqs)
+ 		pthread_cond_broadcast(&sio->finished);
+@@ -4443,10 +4461,18 @@
+ 
+ 	sshfs_inc_modifver();
+ 
+-	if (!sshfs.sync_write && !sf->write_error)
+-		err = sshfs_async_write(sf, wbuf, size, offset);
+-	else
++	if (!sshfs.sync_write) {
++		int write_error;
++		pthread_mutex_lock(&sshfs.lock);
++		write_error = sf->write_error;
++		pthread_mutex_unlock(&sshfs.lock);
++		if (!write_error)
++			err = sshfs_async_write(sf, wbuf, size, offset);
++		else
++			err = sshfs_sync_write(sf, wbuf, size, offset);
++	} else {
+ 		err = sshfs_sync_write(sf, wbuf, size, offset);
++	}
+ 
+ 	return err ? err : (int) size;
+ }

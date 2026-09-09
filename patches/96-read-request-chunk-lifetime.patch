@@ -1,0 +1,50 @@
+--- a/sshfs.c
++++ b/sshfs.c
+@@ -351,8 +351,11 @@
+ 	int error;
+ };
+ 
++struct read_chunk;
++
+ struct read_req {
+ 	struct sshfs_io *sio;
++	struct read_chunk *chunk;
+ 	struct list_head list;
+ 	struct buffer data;
+ 	size_t size;
+@@ -4147,11 +4150,27 @@
+ 	rreq->sio->num_reqs--;
+ 	if (!rreq->sio->num_reqs)
+ 		pthread_cond_broadcast(&rreq->sio->finished);
++
++	/*
++	 * sshfs_read_begin() acquired a request-owned chunk reference under
++	 * sshfs.lock. request_free() invokes this callback while holding that same
++	 * lock, so return the ownership here after the callback has finished using
++	 * rreq/chunk state.
++	 */
++	chunk_put(rreq->chunk);
+ }
+ 
+ static void sshfs_read_begin(struct request *req)
+ {
+ 	struct read_req *rreq = (struct read_req *) req->data;
++
++	/*
++	 * A submitted READ owns the chunk until its completion callback has
++	 * finished.  The cached/read-call reference may disappear independently
++	 * (for example when release() drops an in-flight readahead chunk), so the
++	 * request itself must keep the callback state alive.
++	 */
++	rreq->chunk->refs++;
+ 	rreq->sio->num_reqs++;
+ }
+ 
+@@ -4182,6 +4201,7 @@
+ 
+ 		rreq = g_new0(struct read_req, 1);
+ 		rreq->sio = &chunk->sio;
++		rreq->chunk = chunk;
+ 		rreq->size = bsize;
+ 		buf_init(&rreq->data, 0);
+ 		list_add(&rreq->list, &chunk->reqs);

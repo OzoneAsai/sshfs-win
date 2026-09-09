@@ -1,0 +1,147 @@
+--- a/sshfs.c
++++ b/sshfs.c
+@@ -327,11 +327,14 @@
+ 	size_t len;
+ 	struct list_head list;
+ 	struct conn *conn;
++	int connver;
++	int outstanding_accounted;
+ 	int remote_handle_reserved;
+ 	int remote_handle_reservation_connver;
+ };
+ 
+ static void remote_handle_release_reservation_locked(struct request *req);
++static void request_release_outstanding_locked(struct request *req);
+ 
+ struct sshfs_io {
+ 	int num_reqs;
+@@ -441,8 +444,8 @@
+ 	unsigned blksize;
+ 	char *progname;
+ 	long modifver;
+-	unsigned outstanding_len;
+-	unsigned max_outstanding_len;
++	size_t outstanding_len;
++	size_t max_outstanding_len;
+ 	pthread_cond_t outstanding_cond;
+ 	int password_stdin;
+ 	int password_stdout;
+@@ -1579,6 +1582,34 @@
+ }
+ 
+ /*
++ * Release one request's in-flight byte ownership. Caller holds sshfs.lock.
++ * The ownership bit makes reply, send-failure, teardown and final-destroy
++ * paths idempotent. An underflow means request ownership is corrupted, so
++ * fail closed rather than silently unblocking I/O with a false byte count.
++ */
++static void request_release_outstanding_locked(struct request *req)
++{
++	if (!req->outstanding_accounted)
++		return;
++
++	if (req->len > sshfs.outstanding_len) {
++		fprintf(stderr,
++			"sshfs: outstanding byte accounting invariant failed "
++			"request=%u len=%llu tracked=%llu\n",
++			req->id, (unsigned long long)req->len,
++			(unsigned long long)sshfs.outstanding_len);
++		abort();
++	}
++
++	sshfs.outstanding_len -= req->len;
++	req->outstanding_accounted = 0;
++
++	/* Any reduction may make room for a request waiting at admission. */
++	if (sshfs.max_outstanding_len != (size_t)-1)
++		pthread_cond_broadcast(&sshfs.outstanding_cond);
++}
++
++/*
+  * Admission control for new server-side handles. Caller holds sshfs.lock.
+  * Count both live handles and admitted OPEN/OPENDIR requests so concurrent
+  * opens cannot overshoot the configured cap.
+@@ -1693,6 +1724,7 @@
+ 
+ static void request_free(struct request *req)
+ {
++	request_release_outstanding_locked(req);
+ 	/*
+ 	 * request_free() is called with sshfs.lock held. A handle reservation
+ 	 * can survive local setup failure before the request reaches reqtab or
+@@ -1749,6 +1781,7 @@
+ 	if (req->conn != conn)
+ 		return FALSE;
+ 
++	request_release_outstanding_locked(req);
+ 	remote_handle_release_reservation_locked(req);
+ 	req->error = -EIO;
+ 	if (req->want_reply)
+@@ -1785,17 +1818,10 @@
+ 	if (req == NULL)
+ 		fprintf(stderr, "request %i not found\n", id);
+ 	else {
+-		int was_over;
+-
+-		was_over = sshfs.outstanding_len > sshfs.max_outstanding_len;
+-		sshfs.outstanding_len -= req->len;
+-		if (was_over &&
+-		    sshfs.outstanding_len <= sshfs.max_outstanding_len) {
+-			pthread_cond_broadcast(&sshfs.outstanding_cond);
+-		}
+ 		remote_handle_account_reply_locked(req, type, &buf,
+ 						   &handle_warning);
+ 		g_hash_table_remove(sshfs.reqtab, GUINT_TO_POINTER(id));
++		request_release_outstanding_locked(req);
+ 		conn->progress_epoch++;
+ 	}
+ 	pthread_mutex_unlock(&sshfs.lock);
+@@ -1870,7 +1896,6 @@
+ 	conn->connver = ++sshfs.connvers;
+ 	conn->remote_handles = 0;
+ 	conn->remote_handle_reservations = 0;
+-	sshfs.outstanding_len = 0;
+ 	pthread_cond_broadcast(&sshfs.outstanding_cond);
+ 	pthread_mutex_unlock(&sshfs.lock);
+ 
+@@ -2333,10 +2358,20 @@
+ 		pthread_mutex_unlock(&sshfs.lock);
+ 		goto out;
+ 	}
++	req->connver = conn->connver;
+ 	req->len = iov_length(iov, count) + 9;
+-	sshfs.outstanding_len += req->len;
+-	while (sshfs.outstanding_len > sshfs.max_outstanding_len)
++	while (sshfs.outstanding_len != 0 &&
++	       (sshfs.outstanding_len >= sshfs.max_outstanding_len ||
++		req->len > sshfs.max_outstanding_len - sshfs.outstanding_len)) {
+ 		pthread_cond_wait(&sshfs.outstanding_cond, &sshfs.lock);
++		if (req->connver != conn->connver) {
++			err = -EIO;
++			pthread_mutex_unlock(&sshfs.lock);
++			goto out;
++		}
++	}
++	sshfs.outstanding_len += req->len;
++	req->outstanding_accounted = 1;
+ 
+ 	if (sshfs.stall_warn != 0 &&
+ 	    clock_gettime(CLOCK_MONOTONIC, &req->health_start) == -1) {
+@@ -2358,6 +2393,8 @@
+ 
+ 		pthread_mutex_lock(&sshfs.lock);
+ 		rmed = g_hash_table_remove(sshfs.reqtab, GUINT_TO_POINTER(id));
++		if (rmed)
++			request_release_outstanding_locked(req);
+ 		pthread_mutex_unlock(&sshfs.lock);
+ 
+ 		if (!rmed && !want_reply) {
+@@ -4970,7 +5007,7 @@
+ 		   would abort */
+ 		sshfs.max_outstanding_len = 8388608;
+ 	else
+-		sshfs.max_outstanding_len = ~0;
++		sshfs.max_outstanding_len = (size_t)-1;
+ 
+ 	if (sshfs.max_conns > 1) {
+ 		if (sshfs.buflimit_workaround) {

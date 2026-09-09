@@ -1,0 +1,17 @@
+--- a/sshfs.c
++++ b/sshfs.c
+@@ -1693,6 +1693,14 @@
+ 
+ static void request_free(struct request *req)
+ {
++	/*
++	 * request_free() is called with sshfs.lock held. A handle reservation
++	 * can survive local setup failure before the request reaches reqtab or
++	 * receives a reply, so final request destruction is the ownership
++	 * backstop for releasing it.
++	 */
++	remote_handle_release_reservation_locked(req);
++
+ 	if (req->end_func)
+ 		req->end_func(req);
+ 

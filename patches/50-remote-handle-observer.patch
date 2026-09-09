@@ -1,0 +1,153 @@
+--- a/sshfs.c
++++ b/sshfs.c
+@@ -222,6 +222,8 @@
+ 	int dir_count;
+ 	int file_count;
+ 	uint64_t progress_epoch;
++	unsigned remote_handles;
++	unsigned remote_handle_peak;
+ };
+ 
+ struct buffer {
+@@ -310,6 +312,7 @@
+ 
+ struct request {
+ 	unsigned int want_reply;
++	uint8_t request_type;
+ 	request_ready_t ready;
+ 	uint8_t reply_type;
+ 	uint32_t id;
+@@ -445,6 +448,7 @@
+ 	int ext_fsync;
+ 	struct fuse_operations *op;
+ 	unsigned stall_warn;
++	unsigned handle_warn;
+ 
+ 	/* statistics */
+ 	uint64_t bytes_sent;
+@@ -565,6 +569,7 @@
+ 	SSHFS_OPT("sshfs_debug",       debug, 1),
+ 	SSHFS_OPT("reconnect",         reconnect, 1),
+ 	SSHFS_OPT("stall_warn=%u",      stall_warn, 0),
++	SSHFS_OPT("handle_warn=%u",     handle_warn, 0),
+ 	SSHFS_OPT("transform_symlinks", transform_symlinks, 1),
+ 	SSHFS_OPT("contain_symlinks", contain_symlinks, 1),
+ 	SSHFS_OPT("no_contain_symlinks", contain_symlinks, 0),
+@@ -1544,6 +1549,79 @@
+ 	return res;
+ }
+ 
++struct remote_handle_warning {
++	int emit;
++	unsigned conn_index;
++	unsigned tracked;
++	unsigned peak;
++	unsigned warning_step;
++};
++
++/*
++ * Account SFTP handle replies while sshfs.lock is held. request_type is the
++ * original SFTP opcode, so asynchronous CLOSE requests are covered too.
++ * No logging is performed under sshfs.lock; a snapshot is returned to the
++ * caller for emission after unlocking.
++ */
++static void remote_handle_account_reply_locked(
++	struct request *req, uint8_t reply_type, const struct buffer *reply,
++	struct remote_handle_warning *warning)
++{
++	struct conn *conn = req->conn;
++	int creates_handle = 0;
++	int closes_handle = 0;
++	unsigned old_count;
++
++	if (req->request_type == SSH_FXP_OPEN ||
++	    req->request_type == SSH_FXP_OPENDIR) {
++		creates_handle = reply_type == SSH_FXP_HANDLE;
++	} else if (req->request_type == SSH_FXP_CLOSE) {
++		struct buffer status_reply = *reply;
++		uint32_t status;
++
++		if (reply_type == SSH_FXP_STATUS &&
++		    buf_get_uint32(&status_reply, &status) != -1 &&
++		    status == SSH_FX_OK)
++			closes_handle = 1;
++	} else {
++		return;
++	}
++
++	if (!creates_handle && !closes_handle)
++		return;
++
++	old_count = conn->remote_handles;
++	if (creates_handle) {
++		conn->remote_handles++;
++		if (conn->remote_handles > conn->remote_handle_peak)
++			conn->remote_handle_peak = conn->remote_handles;
++
++		if (sshfs.handle_warn != 0 &&
++		    conn->remote_handles / sshfs.handle_warn >
++		    old_count / sshfs.handle_warn) {
++			warning->emit = 1;
++			warning->conn_index = (unsigned)(conn - sshfs.conns);
++			warning->tracked = conn->remote_handles;
++			warning->peak = conn->remote_handle_peak;
++			warning->warning_step = sshfs.handle_warn;
++		}
++	} else if (conn->remote_handles != 0) {
++		conn->remote_handles--;
++	}
++}
++
++static void remote_handle_log_warning(const struct remote_handle_warning *warning)
++{
++	if (!warning->emit)
++		return;
++
++	fprintf(stderr,
++		"sshfs: remote-handle-observer connection=%u "
++		"tracked=%u peak=%u warning_step=%u\n",
++		warning->conn_index, warning->tracked, warning->peak,
++		warning->warning_step);
++}
++
+ static void request_free(struct request *req)
+ {
+ 	if (req->end_func)
+@@ -1610,6 +1688,7 @@
+ 	uint8_t type;
+ 	struct request *req;
+ 	uint32_t id;
++	struct remote_handle_warning handle_warning = { 0 };
+ 
+ 	buf_init(&buf, 0);
+ 	res = sftp_read(conn, &type, &buf);
+@@ -1636,10 +1715,13 @@
+ 		    sshfs.outstanding_len <= sshfs.max_outstanding_len) {
+ 			pthread_cond_broadcast(&sshfs.outstanding_cond);
+ 		}
++		remote_handle_account_reply_locked(req, type, &buf,
++						   &handle_warning);
+ 		g_hash_table_remove(sshfs.reqtab, GUINT_TO_POINTER(id));
+ 		conn->progress_epoch++;
+ 	}
+ 	pthread_mutex_unlock(&sshfs.lock);
++	remote_handle_log_warning(&handle_warning);
+ 	if (req != NULL) {
+ 		if (sshfs.debug) {
+ 			struct timeval now;
+@@ -1706,6 +1788,7 @@
+ 	pthread_mutex_lock(&sshfs.lock);
+ 	conn->processing_thread_started = 0;
+ 	close_conn(conn);
++	conn->remote_handles = 0;
+ 	g_hash_table_foreach_remove(sshfs.reqtab, (GHRFunc) clean_req, conn);
+ 	conn->connver = ++sshfs.connvers;
+ 	sshfs.outstanding_len = 0;
+@@ -2143,6 +2226,7 @@
+ 		*reqp = NULL;
+ 
+ 	req->want_reply = want_reply;
++	req->request_type = type;
+ 	req->end_func = end_func;
+ 	req->data = data;
+ 	if (request_ready_init(&req->ready) == -1) {

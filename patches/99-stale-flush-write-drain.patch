@@ -1,0 +1,44 @@
+--- a/sshfs.c
++++ b/sshfs.c
+@@ -4121,17 +4121,21 @@
+ static int sshfs_flush(const char *path, struct fuse_file_info *fi)
+ {
+ 	int err;
++	int stale;
+ 	struct sshfs_file *sf = get_sshfs_file(fi);
+ 	struct list_head write_reqs;
+ 	struct list_head *curr_list;
+ 
+-	if (!sshfs_file_is_conn(sf))
+-		return -EIO;
+-
++	(void) path;
+ 	if (sshfs.sync_write)
+-		return 0;
++		return sshfs_file_is_conn(sf) ? 0 : -EIO;
+ 
+-	(void) path;
++	/*
++	 * A generation change does not cancel sender-side ownership immediately.
++	 * A WRITE may already have been linked into sf->write_reqs before teardown
++	 * changes connver, and its cleanup callback still dereferences sf.  Drain
++	 * those requests before release() is allowed to destroy the file object.
++	 */
+ 	pthread_mutex_lock(&sshfs.lock);
+ 	if (!list_empty(&sf->write_reqs)) {
+ 		curr_list = sf->write_reqs.prev;
+@@ -4143,8 +4147,13 @@
+ 	}
+ 	err = sf->write_error;
+ 	sf->write_error = 0;
++	stale = sf->connver != sf->conn->connver;
+ 	pthread_mutex_unlock(&sshfs.lock);
+-	return err;
++
++	/* Preserve the concrete write failure when one already explains release. */
++	if (err)
++		return err;
++	return stale ? -EIO : 0;
+ }
+ 
+ static int sshfs_fsync(const char *path, int isdatasync,

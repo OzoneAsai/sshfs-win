@@ -1,0 +1,142 @@
+--- a/sshfs.c
++++ b/sshfs.c
+@@ -224,6 +224,7 @@
+ 	uint64_t progress_epoch;
+ 	unsigned remote_handles;
+ 	unsigned remote_handle_peak;
++	unsigned remote_handle_reservations;
+ };
+ 
+ struct buffer {
+@@ -326,8 +327,12 @@
+ 	size_t len;
+ 	struct list_head list;
+ 	struct conn *conn;
++	int remote_handle_reserved;
++	int remote_handle_reservation_connver;
+ };
+ 
++static void remote_handle_release_reservation_locked(struct request *req);
++
+ struct sshfs_io {
+ 	int num_reqs;
+ 	pthread_cond_t finished;
+@@ -449,6 +454,7 @@
+ 	struct fuse_operations *op;
+ 	unsigned stall_warn;
+ 	unsigned handle_warn;
++	unsigned handle_limit;
+ 
+ 	/* statistics */
+ 	uint64_t bytes_sent;
+@@ -570,6 +576,7 @@
+ 	SSHFS_OPT("reconnect",         reconnect, 1),
+ 	SSHFS_OPT("stall_warn=%u",      stall_warn, 0),
+ 	SSHFS_OPT("handle_warn=%u",     handle_warn, 0),
++	SSHFS_OPT("handle_limit=%u",    handle_limit, 0),
+ 	SSHFS_OPT("transform_symlinks", transform_symlinks, 1),
+ 	SSHFS_OPT("contain_symlinks", contain_symlinks, 1),
+ 	SSHFS_OPT("no_contain_symlinks", contain_symlinks, 0),
+@@ -1549,6 +1556,45 @@
+ 	return res;
+ }
+ 
++/*
++ * Admission control for new server-side handles. Caller holds sshfs.lock.
++ * Count both live handles and admitted OPEN/OPENDIR requests so concurrent
++ * opens cannot overshoot the configured cap.
++ */
++static int remote_handle_reserve_locked(struct request *req, uint8_t type,
++					int want_reply)
++{
++	struct conn *conn = req->conn;
++
++	if (!want_reply || sshfs.handle_limit == 0)
++		return 0;
++	if (type != SSH_FXP_OPEN && type != SSH_FXP_OPENDIR)
++		return 0;
++	if (conn->remote_handles + conn->remote_handle_reservations >=
++	    sshfs.handle_limit)
++		return -EMFILE;
++
++	conn->remote_handle_reservations++;
++	req->remote_handle_reserved = 1;
++	req->remote_handle_reservation_connver = conn->connver;
++	return 0;
++}
++
++static void remote_handle_release_reservation_locked(struct request *req)
++{
++	struct conn *conn;
++
++	if (!req->remote_handle_reserved)
++		return;
++
++	conn = req->conn;
++	if (req->remote_handle_reservation_connver == conn->connver) {
++		assert(conn->remote_handle_reservations != 0);
++		conn->remote_handle_reservations--;
++	}
++	req->remote_handle_reserved = 0;
++}
++
+ struct remote_handle_warning {
+ 	int emit;
+ 	unsigned conn_index;
+@@ -1574,6 +1620,7 @@
+ 
+ 	if (req->request_type == SSH_FXP_OPEN ||
+ 	    req->request_type == SSH_FXP_OPENDIR) {
++		remote_handle_release_reservation_locked(req);
+ 		creates_handle = reply_type == SSH_FXP_HANDLE;
+ 	} else if (req->request_type == SSH_FXP_CLOSE) {
+ 		struct buffer status_reply = *reply;
+@@ -1672,6 +1719,7 @@
+ 	if (req->conn != conn)
+ 		return FALSE;
+ 
++	remote_handle_release_reservation_locked(req);
+ 	req->error = -EIO;
+ 	if (req->want_reply)
+ 		request_ready_post(&req->ready);
+@@ -1788,9 +1836,10 @@
+ 	pthread_mutex_lock(&sshfs.lock);
+ 	conn->processing_thread_started = 0;
+ 	close_conn(conn);
+-	conn->remote_handles = 0;
+ 	g_hash_table_foreach_remove(sshfs.reqtab, (GHRFunc) clean_req, conn);
+ 	conn->connver = ++sshfs.connvers;
++	conn->remote_handles = 0;
++	conn->remote_handle_reservations = 0;
+ 	sshfs.outstanding_len = 0;
+ 	pthread_cond_broadcast(&sshfs.outstanding_cond);
+ 	pthread_mutex_unlock(&sshfs.lock);
+@@ -2227,7 +2276,6 @@
+ 
+ 	req->want_reply = want_reply;
+ 	req->request_type = type;
+-	req->end_func = end_func;
+ 	req->data = data;
+ 	if (request_ready_init(&req->ready) == -1) {
+ 		int ready_errno = errno;
+@@ -2238,12 +2286,18 @@
+ 	}
+ 	buf_init(&req->reply, 0);
+ 	pthread_mutex_lock(&sshfs.lock);
++	req->conn = conn;
++	req->conn->req_count++;
++	err = remote_handle_reserve_locked(req, type, want_reply);
++	if (err) {
++		pthread_mutex_unlock(&sshfs.lock);
++		goto out;
++	}
++	req->end_func = end_func;
+ 	if (begin_func)
+ 		begin_func(req);
+ 	id = sftp_get_id();
+ 	req->id = id;
+-	req->conn = conn;
+-	req->conn->req_count++;
+ 	err = start_processing_thread(conn);
+ 	if (err) {
+ 		pthread_mutex_unlock(&sshfs.lock);

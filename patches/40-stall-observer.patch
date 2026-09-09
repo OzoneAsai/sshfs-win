@@ -1,0 +1,222 @@
+--- a/sshfs.c
++++ b/sshfs.c
+@@ -22,6 +22,7 @@
+ #include <string.h>
+ #include <stdint.h>
+ #include <errno.h>
++#include <time.h>
+ #ifndef __APPLE__
+ #  include <semaphore.h>
+ #endif
+@@ -220,6 +221,7 @@
+ 	int req_count;
+ 	int dir_count;
+ 	int file_count;
++	uint64_t progress_epoch;
+ };
+ 
+ struct buffer {
+@@ -315,6 +317,7 @@
+ 	int error;
+ 	struct buffer reply;
+ 	struct timeval start;
++	struct timespec health_start;
+ 	void *data;
+ 	request_func end_func;
+ 	size_t len;
+@@ -441,6 +444,7 @@
+ 	int ext_hardlink;
+ 	int ext_fsync;
+ 	struct fuse_operations *op;
++	unsigned stall_warn;
+ 
+ 	/* statistics */
+ 	uint64_t bytes_sent;
+@@ -560,6 +564,7 @@
+ 	SSHFS_OPT("sync_readdir",      sync_readdir, 1),
+ 	SSHFS_OPT("sshfs_debug",       debug, 1),
+ 	SSHFS_OPT("reconnect",         reconnect, 1),
++	SSHFS_OPT("stall_warn=%u",      stall_warn, 0),
+ 	SSHFS_OPT("transform_symlinks", transform_symlinks, 1),
+ 	SSHFS_OPT("contain_symlinks", contain_symlinks, 1),
+ 	SSHFS_OPT("no_contain_symlinks", contain_symlinks, 0),
+@@ -1632,6 +1637,7 @@
+ 			pthread_cond_broadcast(&sshfs.outstanding_cond);
+ 		}
+ 		g_hash_table_remove(sshfs.reqtab, GUINT_TO_POINTER(id));
++		conn->progress_epoch++;
+ 	}
+ 	pthread_mutex_unlock(&sshfs.lock);
+ 	if (req != NULL) {
+@@ -2164,6 +2170,11 @@
+ 	while (sshfs.outstanding_len > sshfs.max_outstanding_len)
+ 		pthread_cond_wait(&sshfs.outstanding_cond, &sshfs.lock);
+ 
++	if (sshfs.stall_warn != 0 &&
++	    clock_gettime(CLOCK_MONOTONIC, &req->health_start) == -1) {
++		req->health_start.tv_sec = 0;
++		req->health_start.tv_nsec = 0;
++	}
+ 	g_hash_table_insert(sshfs.reqtab, GUINT_TO_POINTER(id), req);
+ 	if (sshfs.debug) {
+ 		gettimeofday(&req->start, NULL);
+@@ -3853,6 +3864,151 @@
+ 	}
+ }
+ 
++
++struct request_stall_scan {
++	struct timespec now;
++	uint64_t *oldest_ms;
++	uint32_t *oldest_id;
++	unsigned *count;
++};
++
++static uint64_t timespec_age_ms(const struct timespec *now,
++				const struct timespec *start)
++{
++	time_t sec;
++	long nsec;
++
++	if (start->tv_sec == 0 && start->tv_nsec == 0)
++		return 0;
++
++	sec = now->tv_sec - start->tv_sec;
++	nsec = now->tv_nsec - start->tv_nsec;
++	if (nsec < 0) {
++		sec--;
++		nsec += 1000000000L;
++	}
++	if (sec < 0)
++		return 0;
++
++	return (uint64_t) sec * 1000 + (uint64_t) nsec / 1000000;
++}
++
++static uint64_t timespec_to_ms(const struct timespec *ts)
++{
++	return (uint64_t) ts->tv_sec * 1000 +
++	       (uint64_t) ts->tv_nsec / 1000000;
++}
++
++static void request_stall_scan_one(gpointer key, gpointer value,
++				   gpointer user_data)
++{
++	struct request *req = value;
++	struct request_stall_scan *scan = user_data;
++	ptrdiff_t conn_index = req->conn - sshfs.conns;
++	uint64_t age_ms;
++
++	(void) key;
++	if (conn_index < 0 || conn_index >= sshfs.max_conns)
++		return;
++
++	scan->count[conn_index]++;
++	age_ms = timespec_age_ms(&scan->now, &req->health_start);
++	if (age_ms > scan->oldest_ms[conn_index]) {
++		scan->oldest_ms[conn_index] = age_ms;
++		scan->oldest_id[conn_index] = req->id;
++	}
++}
++
++static void *request_stall_observer(void *data)
++{
++	uint64_t *last_log_epoch;
++	uint64_t *last_log_ms;
++	uint64_t *epoch;
++	uint64_t *oldest_ms;
++	uint32_t *oldest_id;
++	unsigned *count;
++	int i;
++
++	(void) data;
++
++	last_log_epoch = g_new0(uint64_t, sshfs.max_conns);
++	last_log_ms = g_new0(uint64_t, sshfs.max_conns);
++	epoch = g_new0(uint64_t, sshfs.max_conns);
++	oldest_ms = g_new0(uint64_t, sshfs.max_conns);
++	oldest_id = g_new0(uint32_t, sshfs.max_conns);
++	count = g_new0(unsigned, sshfs.max_conns);
++
++	for (;;) {
++		struct request_stall_scan scan;
++		uint64_t now_ms;
++		uint64_t threshold_ms;
++
++		sleep(1);
++		if (clock_gettime(CLOCK_MONOTONIC, &scan.now) == -1)
++			continue;
++		now_ms = timespec_to_ms(&scan.now);
++		threshold_ms = (uint64_t) sshfs.stall_warn * 1000;
++		memset(oldest_ms, 0, sizeof(*oldest_ms) * sshfs.max_conns);
++		memset(oldest_id, 0, sizeof(*oldest_id) * sshfs.max_conns);
++		memset(count, 0, sizeof(*count) * sshfs.max_conns);
++		scan.oldest_ms = oldest_ms;
++		scan.oldest_id = oldest_id;
++		scan.count = count;
++
++		/*
++		 * Snapshot every outstanding request in one hash-table pass while
++		 * holding sshfs.lock. Never write logs while holding the lock: a
++		 * blocked stderr must not become the cause of an SFTP stall.
++		 */
++		pthread_mutex_lock(&sshfs.lock);
++		g_hash_table_foreach(sshfs.reqtab, request_stall_scan_one, &scan);
++		for (i = 0; i < sshfs.max_conns; i++)
++			epoch[i] = sshfs.conns[i].progress_epoch;
++		pthread_mutex_unlock(&sshfs.lock);
++
++		for (i = 0; i < sshfs.max_conns; i++) {
++			int should_log = count[i] != 0 &&
++				oldest_ms[i] >= threshold_ms &&
++				(last_log_ms[i] == 0 ||
++				 now_ms - last_log_ms[i] >= threshold_ms);
++			int concurrent_progress = epoch[i] != last_log_epoch[i];
++
++			if (!should_log)
++				continue;
++
++			fprintf(stderr,
++				"sshfs: stall-observer connection=%d "
++				"oldest_request=%u age_ms=%llu "
++				"outstanding=%u progress_epoch=%llu "
++				"progress_since_last_warning=%s\n",
++				i, oldest_id[i],
++				(unsigned long long) oldest_ms[i], count[i],
++				(unsigned long long) epoch[i],
++				concurrent_progress ? "yes" : "no");
++			last_log_ms[i] = now_ms;
++			last_log_epoch[i] = epoch[i];
++		}
++	}
++	return NULL;
++}
++
++static void start_request_stall_observer(void)
++{
++	pthread_t thread_id;
++	int err;
++
++	if (sshfs.stall_warn == 0)
++		return;
++
++	err = pthread_create(&thread_id, NULL, request_stall_observer, NULL);
++	if (err != 0) {
++		fprintf(stderr, "failed to create stall observer: %s\n",
++			strerror(err));
++		return;
++	}
++	pthread_detach(thread_id);
++}
++
+ static int processing_init(void)
+ {
+ 	int i;
+@@ -3876,6 +4032,7 @@
+ 			return -1;
+ 		}
+ 	}
++	start_request_stall_observer();
+ 	return 0;
+ }
+ 

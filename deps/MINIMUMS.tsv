@@ -1,0 +1,10 @@
+component	minimum	scope	policy
+cygwin	3.6.10	build+runtime	stable line only; do not silently accept older runtime
+glib-2.0	2.88.3	build+runtime	2.88.x stable; 2.89.x is development and is not the default target
+pcre2	10.48	build+runtime	security-patched 10.x; explicitly built before GLib
+cmake	3.15	build-only	PCRE2 upstream CMake minimum; runtime artifacts do not depend on CMake
+meson	1.8.5	build	current stable Cygwin package baseline
+ninja	1.13.2	build	current stable Cygwin package baseline
+openssl	3.5.8	vendor-ssh	LTS security floor; 3.0 reaches EOL on 2026-09-07 and 1.1.1 is forbidden
+openssh	10.5	vendor-ssh	10.5p1 signed upstream tag
+winfsp	2.1.25156	install/runtime	Windows 11 baseline
