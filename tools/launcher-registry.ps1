@@ -159,7 +159,7 @@ function Invoke-SshfsWinLauncherValueTransaction {
                     }
                 } | Out-Null
             } catch {
-                $rollbackErrors.Add("$class: $($_.Exception.Message)")
+                $rollbackErrors.Add("${class}: $($_.Exception.Message)")
             }
         }
 
