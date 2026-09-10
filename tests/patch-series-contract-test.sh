@@ -29,6 +29,7 @@ if grep -Fq 'for f in $(PrjDir)/patches/*.patch' "$ROOT/Makefile"; then
     echo 'Makefile still relies on patch glob order' >&2; exit 1
 fi
 grep -Fq 'patches/SERIES' "$ROOT/Makefile"
+grep -Fq 'GIT_CEILING_DIRECTORIES="$(PrjDir)" git apply' "$ROOT/Makefile"
 grep -Fq 'patches/SERIES' "$ROOT/tools/verify-sshfs-source.sh"
 grep -Fq 'patches/SERIES' "$ROOT/tools/apply-checkpoint.sh"
 

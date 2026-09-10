@@ -36,11 +36,20 @@ trap 'rm -rf "$tmp"' EXIT HUP INT TERM
     echo 'portable stager lost SSHFS executable mode' >&2; exit 1;
 }
 
-# A mode-only source mutation must still be detected by tree reconstruction.
-chmod -x "$tmp/sshfs/test/test_sshfs.py"
-if "$ROOT/tools/verify-sshfs-source.sh" --source-only "$tmp/sshfs" >/dev/null 2>&1; then
-    echo 'source verifier accepted a mode-corrupted source tree' >&2
-    exit 1
-fi
+# A mode-only source mutation must still be detected where the filesystem
+# exposes real POSIX mode bits. Cygwin/MSYS/MINGW synthesize them from Windows
+# ACLs, matching the verifier's documented platform exception.
+case "$(uname -s 2>/dev/null || printf unknown)" in
+    CYGWIN*|MSYS*|MINGW*)
+        echo 'mode-corruption probe: SKIP (Windows ACL mode emulation)'
+        ;;
+    *)
+        chmod -x "$tmp/sshfs/test/test_sshfs.py"
+        if "$ROOT/tools/verify-sshfs-source.sh" --source-only "$tmp/sshfs" >/dev/null 2>&1; then
+            echo 'source verifier accepted a mode-corrupted source tree' >&2
+            exit 1
+        fi
+        ;;
+esac
 
 echo 'source archive self-contained contract: PASS'

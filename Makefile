@@ -182,8 +182,8 @@ $(Status)/patch: $(Status)/clone $(SSHFS_PATCH_SERIES) $(SSHFS_PATCHES)
 		echo "applying $$f"; \
 		tmp=$$(mktemp); \
 		sed 's/\r$$//' <"$$f" >"$$tmp"; \
-		git apply --check --whitespace=error-all "$$tmp"; \
-		git apply --whitespace=error-all "$$tmp"; \
+		GIT_CEILING_DIRECTORIES="$(PrjDir)" git apply --check --whitespace=error-all "$$tmp"; \
+		GIT_CEILING_DIRECTORIES="$(PrjDir)" git apply --whitespace=error-all "$$tmp"; \
 		rm -f "$$tmp"; \
 	done < "$(SSHFS_PATCH_SERIES)"; \
 	git hash-object sshfs.c > $(abspath $(Status))/patched-sshfs-c.blob

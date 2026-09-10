@@ -9,7 +9,7 @@
  	SIZE_T attr_size = 0;
  	wchar_t *application = NULL, *cmdline = NULL, *cwd = NULL;
  	int rfd = -1, wfd = -1, result = -1;
-@@ -1469,13 +1471,13 @@ static int start_ssh_win32(struct conn *conn)
+@@ -1469,12 +1471,12 @@ static int start_ssh_win32(struct conn *conn)
  	}
  
  	/* Transfer the parent pipe ends into Cygwin fd ownership. */
