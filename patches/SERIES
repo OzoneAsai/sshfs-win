@@ -47,3 +47,4 @@
 
 113-truncate-workaround-preservation.patch
 114-cygwin-compile-contract.patch
+115-max-write-default-64k.patch

@@ -1,0 +1,6 @@
+--- a/sshfs.c
++++ b/sshfs.c
+@@ -4415,1 +4415,2 @@
+-	sshfs.max_write = 32768;
++	/* Use the largest value accepted by the SFTP/SSHFS implementation. */
++	sshfs.max_write = 65536;
